@@ -71,7 +71,7 @@ assert sys.version_info >= (2, 6), \
 
 dev_config = None
 with open("dev_config.yml", 'r') as f:
-    dev_config = yaml.load(f)
+    dev_config = yaml.load(f, Loader=yaml.Loader)
 
 
 def grab(src, dest, name):
@@ -394,7 +394,7 @@ def updategeoip(options):
 
 @task
 @cmdopts([
-    ('settings', 's', 'Specify custom DJANGO_SETTINGS_MODULE')
+    ('settings=', 's', 'Specify custom DJANGO_SETTINGS_MODULE')
 ])
 def sync(options):
     """
@@ -483,7 +483,7 @@ def package(options):
     ('bind=', 'b', 'Bind server to provided IP address and port number.'),
     ('java_path=', 'j', 'Full path to java install for Windows'),
     ('foreground', 'f', 'Do not run in background but in foreground'),
-    ('settings', 's', 'Specify custom DJANGO_SETTINGS_MODULE')
+    ('settings=', 's', 'Specify custom DJANGO_SETTINGS_MODULE')
 ], share_with=['start_django', 'start_geoserver'])
 def start():
     """
@@ -686,6 +686,17 @@ def start_geoserver(options):
         # prevents geonode security from initializing correctly otherwise
         with pushd(data_dir):
             javapath = "java"
+            if on_travis:
+                sh((
+                    'echo debconf shared/accepted-oracle-license-v1-1 select true | sudo debconf-set-selections;'
+                    ' echo debconf shared/accepted-oracle-license-v1-1 seen true | sudo debconf-set-selections;'
+                    ' sudo apt install -y oracle-java8-set-default ant maven;'
+                    ' sudo update-java-alternatives --set java-8-oracle'
+                ))
+                # import subprocess
+                # result = subprocess.run(['update-alternatives', '--list', 'java'], stdout=subprocess.PIPE)
+                # javapath = result.stdout
+                javapath = "/usr/lib/jvm/java-8-oracle/jre/bin/java"
             loggernullpath = os.devnull
 
             # checking if our loggernullpath exists and if not, reset it to
@@ -701,7 +712,7 @@ def start_geoserver(options):
                 loggernullpath = "../../downloaded/null.txt"
 
             try:
-                sh(('java -version'))
+                sh(('%(javapath)s -version') % locals() )
             except BaseException:
                 print "Java was not found in your path.  Trying some other options: "
                 javapath_opt = None
@@ -823,7 +834,7 @@ def test_javascript(options):
 @task
 @cmdopts([
     ('name=', 'n', 'Run specific tests.'),
-    ('settings', 's', 'Specify custom DJANGO_SETTINGS_MODULE')
+    ('settings=', 's', 'Specify custom DJANGO_SETTINGS_MODULE')
 ])
 def test_integration(options):
     """
@@ -970,7 +981,7 @@ def reset_hard():
 @task
 @cmdopts([
     ('type=', 't', 'Import specific data type ("vector", "raster", "time")'),
-    ('settings', 's', 'Specify custom DJANGO_SETTINGS_MODULE')
+    ('settings=', 's', 'Specify custom DJANGO_SETTINGS_MODULE')
 ])
 def setup_data():
     """

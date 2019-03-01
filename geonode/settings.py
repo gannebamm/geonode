@@ -354,29 +354,19 @@ INSTALLED_APPS = (
     'leaflet',
     'bootstrap3_datetime',
     'django_filters',
-    'django_extensions',
     'django_basic_auth',
     'autocomplete_light',
     'mptt',
-    # 'crispy_forms',
-
-    # 'djkombu',
-    # 'djcelery',
-    # 'kombu.transport.django',
-
     'storages',
     'floppyforms',
 
     # Theme
-    "pinax_theme_bootstrap",
     'django_forms_bootstrap',
 
     # Social
     'avatar',
     'dialogos',
-    # 'pinax.comments',
     'agon_ratings',
-    # 'pinax.ratings',
     'announcements',
     'actstream',
     'user_messages',
@@ -392,9 +382,6 @@ INSTALLED_APPS = (
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
-
-    # Django REST Framework
-    'rest_framework',
 
     # GeoNode
     'geonode',
@@ -558,7 +545,6 @@ MIDDLEWARE_CLASSES = (
 )
 
 # Security stuff
-MIDDLEWARE_CLASSES += ('django.middleware.security.SecurityMiddleware',)
 SESSION_COOKIE_SECURE = False
 CSRF_COOKIE_SECURE = False
 CSRF_COOKIE_HTTPONLY = False
@@ -617,7 +603,7 @@ LOCKDOWN_GEONODE = strtobool(os.getenv('LOCKDOWN_GEONODE', 'False'))
 # Add additional paths (as regular expressions) that don't require
 # authentication.
 # - authorized exempt urls needed for oauth when GeoNode is set to lockdown
-AUTH_EXEMPT_URLS = (r'^/?$', '/gs/*', '/static/*', '/api/o/*', '/api/roles', '/api/adminRole', '/api/users', '/api/layers',)
+AUTH_EXEMPT_URLS = (r'^/?$', '/gs/*', '/static/*', '/o/*', '/api/o/*', '/api/roles', '/api/adminRole', '/api/users', '/api/layers',)
 
 ANONYMOUS_USER_ID = os.getenv('ANONYMOUS_USER_ID', '-1')
 GUARDIAN_GET_INIT_ANONYMOUS_USER = os.getenv(
@@ -750,6 +736,10 @@ GEOSERVER_LOCATION = os.getenv(
     'GEOSERVER_LOCATION', 'http://localhost:8080/geoserver/'
 )
 
+GEOSERVER_WEB_UI_LOCATION = os.getenv(
+    'GEOSERVER_WEB_UI_LOCATION', urljoin(SITEURL, '/geoserver/')
+)
+
 GEOSERVER_PUBLIC_LOCATION = os.getenv(
     'GEOSERVER_PUBLIC_LOCATION', urljoin(SITEURL, '/gs/')
 )
@@ -770,6 +760,7 @@ OGC_SERVER = {
     'default': {
         'BACKEND': 'geonode.geoserver',
         'LOCATION': GEOSERVER_LOCATION,
+        'WEB_UI_LOCATION': GEOSERVER_WEB_UI_LOCATION,
         'LOGIN_ENDPOINT': 'j_spring_oauth2_geonode_login',
         'LOGOUT_ENDPOINT': 'j_spring_oauth2_geonode_logout',
         # PUBLIC_LOCATION needs to be kept like this because in dev mode
@@ -1414,9 +1405,9 @@ DELAYED_SECURITY_SIGNALS = ast.literal_eval(os.environ.get('DELAYED_SECURITY_SIG
 CELERY_ENABLE_UTC = True
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULE = {
-    'send-summary-every-hour': {
+    'delayed-security-sync-task': {
         'task': 'geonode.security.tasks.synch_guardian',
-        'schedule': timedelta(seconds=600),
+        'schedule': timedelta(seconds=60),
     }
 }
 
