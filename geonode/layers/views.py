@@ -17,16 +17,14 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 #########################################################################
-
+import re
 import os
 import sys
 import logging
 import shutil
 import base64
 import traceback
-import uuid
 import decimal
-import re
 import cPickle as pickle
 from django.db.models import Q
 from celery.exceptions import TimeoutError
@@ -62,9 +60,9 @@ from django.forms.models import inlineformset_factory
 from django.db import transaction
 from django.db.models import F
 from django.forms.utils import ErrorList
-
 from geonode.services.models import Service
 from geonode.layers.forms import LayerForm, LayerUploadForm, NewLayerUploadForm, LayerAttributeForm
+from geonode.base.auth import get_or_create_token
 from geonode.base.forms import CategoryForm, TKeywordForm
 from geonode.layers.models import Layer, Attribute, UploadSession
 from geonode.base.enumerations import CHARSETS
@@ -598,11 +596,13 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         # "online": (layer.remote_service.probe == 200) if layer.storeType == "remoteStore" else True
     }
 
-    if request and 'access_token' in request.session:
-        access_token = request.session['access_token']
-    else:
-        u = uuid.uuid1()
-        access_token = u.hex
+    access_token = None
+    if request and request.user:
+        access_token = get_or_create_token(request.user)
+        if access_token and not access_token.is_expired():
+            access_token = access_token.token
+        else:
+            access_token = None
 
     context_dict["viewer"] = json.dumps(map_obj.viewer_json(
         request, * (NON_WMS_BASE_LAYERS + [maplayer])))
@@ -617,11 +617,14 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
 
     # provide bbox in EPSG:4326 for leaflet
     if context_dict["preview"] == 'leaflet':
-        srid, wkt = layer.geographic_bounding_box.split(';')
-        srid = re.findall(r'\d+', srid)
-        geom = GEOSGeometry(wkt, srid=int(srid[0]))
-        geom.transform(4326)
-        context_dict["layer_bbox"] = ','.join([str(c) for c in geom.extent])
+        try:
+            srid, wkt = layer.geographic_bounding_box.split(';')
+            srid = re.findall(r'\d+', srid)
+            geom = GEOSGeometry(wkt, srid=int(srid[0]))
+            geom.transform(4326)
+            context_dict["layer_bbox"] = ','.join([str(c) for c in geom.extent])
+        except BaseException:
+            pass
 
     if layer.storeType == 'dataStore':
         links = layer.link_set.download().filter(

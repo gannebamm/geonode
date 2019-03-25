@@ -44,6 +44,7 @@ from django.utils.translation import ugettext as _
 from guardian.shortcuts import get_objects_for_user
 from .utils import requests_retry
 from geonode.base.models import ResourceBase
+from geonode.base.auth import get_or_create_token
 from geonode.layers.forms import LayerStyleUploadForm
 from geonode.layers.models import Layer, Style
 from geonode.layers.views import _resolve_layer, _PERMISSION_MSG_MODIFY
@@ -555,7 +556,10 @@ def geoserver_proxy(request,
                     logger.warn("Could not find any Layer %s on DB" % os.path.basename(request.path))
 
     kwargs = {'affected_layers': affected_layers}
-    return proxy(request, url=raw_url, response_callback=_response_callback, **kwargs)
+    import urllib
+    raw_url = urllib.unquote(raw_url).decode('utf8')
+    timeout = getattr(ogc_server_settings, 'TIMEOUT') or 10
+    return proxy(request, url=raw_url, response_callback=_response_callback, timeout=timeout, **kwargs)
 
 
 def _response_callback(**kwargs):
@@ -571,7 +575,7 @@ def _response_callback(**kwargs):
             layer.save()
 
     # Replace Proxy URL
-    if content_type in ('application/xml', 'text/xml', 'text/plain'):
+    if content_type in ('application/xml', 'text/xml', 'text/plain', 'application/json', 'text/json'):
         _gn_proxy_url = urljoin(settings.SITEURL, '/gs/')
         content = content\
             .replace(ogc_server_settings.LOCATION, _gn_proxy_url)\
@@ -622,8 +626,7 @@ def layer_batch_download(request):
         }
 
         url = "%srest/process/batchDownload/launch/" % ogc_server_settings.LOCATION
-        req = http_client.post(url, data=json.dumps(fake_map))
-        content = req.content
+        req, content = http_client.post(url, data=json.dumps(fake_map))
         return HttpResponse(content, status=req.status_code)
 
     if request.method == 'GET':
@@ -634,8 +637,7 @@ def layer_batch_download(request):
 
         url = "%srest/process/batchDownload/status/%s" % (
             ogc_server_settings.LOCATION, download_id)
-        req = http_client.get(url)
-        content = req.content
+        req, content = http_client.get(url)
         return HttpResponse(content, status=req.status_code)
 
 
@@ -659,7 +661,7 @@ def resolve_user(request):
                                 content_type="text/plain")
 
     if not any([user, geoserver, superuser]
-               ) and not request.user.is_anonymous():
+               ) and not request.user.is_anonymous:
         user = request.user.username
         superuser = request.user.is_superuser
 
@@ -832,12 +834,11 @@ def get_capabilities(request, layerid=None, user=None,
     for layer in layers:
         if request.user.has_perm('view_resourcebase',
                                  layer.get_self_resource()):
-            access_token = None
-            if request and 'access_token' in request.session:
-                access_token = request.session['access_token']
+            access_token = get_or_create_token(request.user)
+            if access_token and not access_token.is_expired():
+                access_token = access_token.token
             else:
                 access_token = None
-
             try:
                 workspace, layername = layer.alternate.split(":") if ":" in layer.alternate else (None, layer.alternate)
                 layercap = get_layer_capabilities(layer,
