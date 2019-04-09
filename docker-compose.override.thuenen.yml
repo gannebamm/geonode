@@ -20,6 +20,8 @@ services:
       - SITEURL=http://localhost/
       - ALLOWED_HOSTS=['localhost', '*',]
       - GEOSERVER_PUBLIC_LOCATION=http://localhost/gs/
+    env_file:
+      - ./docker/env/production/django.env
 
   celery:
     build: .
@@ -32,12 +34,16 @@ services:
       - SITEURL=http://localhost/
       - ALLOWED_HOSTS=['localhost', '*',]
       - GEOSERVER_PUBLIC_LOCATION=http://localhost/gs/
+    env_file:
+      - ./docker/env/production/celery.env
 
   geoserver:
     environment:
       - GEONODE_LB_HOST_IP=localhost
       - GEONODE_LB_PORT=80
   #    - NGINX_BASE_URL=
+    env_file:
+      - ./docker/env/production/geoserver.env
 
   geonode:
     volumes:
@@ -48,6 +54,8 @@ services:
     image:  geonode/postgis:10
     ports:
       - "5432:5432"
+    env_file:
+      - ./docker/env/production/db.env
 
 
 volumes:
