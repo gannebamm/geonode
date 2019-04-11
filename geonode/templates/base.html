@@ -142,12 +142,14 @@
     {% block header %}
   <nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
     <div class="container">
-        <div class="navbar-header">
+      <!--  OLD POSITION OF LOGO
+      <div class="navbar-header">
         <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
           <i class="fa fa-navicon fa-lg"></i>
         </button>
         <a class="navbar-brand" href="{% url "home" %}">GeoNode</a>
       </div>
+      -->
       <div id="navbar" class="navbar-collapse collapse">
         <ul class="nav navbar-nav toolbar">
 
@@ -268,6 +270,14 @@
           {% else %}
           <li><a href="#" data-toggle="modal" data-target="#SigninModal" role="button" >{% trans "Sign in" %} </a></li>
               {% endif %}
+              <!-- NEW POSITION OF LOGO START -->
+              <div class="navbar-header">
+                <button type="button" class="navbar-toggle collapsed" data-toggle="collapse" data-target="#navbar" aria-expanded="false" aria-controls="navbar">
+                  <i class="fa fa-navicon fa-lg"></i>
+                </button>
+                <a class="navbar-brand" href="{% url "home" %}">TISDAR</a>
+              </div>
+              <!-- NEW POSITION OF LOGO END -->
             </ul>
           </div> <!--/.nav-collapse -->
         </div>

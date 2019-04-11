@@ -86,15 +86,25 @@ app, created = Application.objects.get_or_create(
     client_type='confidential',
     authorization_grant_type='authorization-code'
 )
-redirect_uris = [
-    'http://{}/gs'.format(os.getenv('HTTPS_HOST',"") if os.getenv('HTTPS_HOST',"") != "" else os.getenv('HTTP_HOST')),
-    'http://{}/gs/index.html'.format(os.getenv('HTTPS_HOST',"") if os.getenv('HTTPS_HOST',"") != "" else os.getenv('HTTP_HOST')),
-]
+
+if (os.getenv('HTTPS_HOST') != ""):
+    redirect_uris = [
+    'https://{}/geoserver'.format(os.getenv('HTTPS_HOST')),
+    'https://{}/geoserver/index.html'.format(os.getenv('HTTPS_HOST')),
+    ]
+else:
+    redirect_uris = [
+    'http://{}/geoserver'.format(os.getenv('HTTP_HOST')),
+    'http://{}/geoserver/index.html'.format(os.getenv('HTTP_HOST')),
+    ]
+
 app.redirect_uris = "\n".join(redirect_uris)
 app.save()
 if created:
+    print('oauth2 provider: ' + app.redirect_uris)
     print('oauth2 provider successfully created')
 else:
+    print('oauth2 provider: ' + app.redirect_uris)
     print('oauth2 provider successfully updated')
 
 

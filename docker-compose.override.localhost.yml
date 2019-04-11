@@ -10,12 +10,12 @@ services:
       - '.:/usr/src/app'
     environment:
       - DEBUG=False
-      - GEONODE_LB_HOST_IP=localhost
+      - GEONODE_LB_HOST_IP=tisdar.thuenen.de
       - GEONODE_LB_PORT=80
-      - SITEURL=http://localhost/
-      - ALLOWED_HOSTS=['localhost', ]
-      - GEOSERVER_PUBLIC_LOCATION=http://localhost/gs/
-      - GEOSERVER_WEB_UI_LOCATION=http://localhost/geoserver/
+      - SITEURL=http://tisdar.thuenen.de/
+      - ALLOWED_HOSTS=['tisdar.thuenen.de', ]
+      - GEOSERVER_PUBLIC_LOCATION=http://tisdar.thuenen.de/gs/
+      - GEOSERVER_WEB_UI_LOCATION=http://tisdar.thuenen.de/geoserver/
 
   celery:
     build: .
@@ -23,15 +23,15 @@ services:
       - '.:/usr/src/app'
     environment:
       - DEBUG=False
-      - GEONODE_LB_HOST_IP=localhost
+      - GEONODE_LB_HOST_IP=tisdar.thuenen.de
       - GEONODE_LB_PORT=80
-      - SITEURL=http://localhost/
-      - ALLOWED_HOSTS=['localhost', ]
-      - GEOSERVER_PUBLIC_LOCATION=http://localhost/gs/
-      - GEOSERVER_WEB_UI_LOCATION=http://localhost/geoserver/
+      - SITEURL=http://tisdar.thuenen.de/
+      - ALLOWED_HOSTS=['tisdar.thuenen.de', ]
+      - GEOSERVER_PUBLIC_LOCATION=http://tisdar.thuenen.de/gs/
+      - GEOSERVER_WEB_UI_LOCATION=http://tisdar.thuenen.de/geoserver/
 
   geoserver:
     environment:
-      - GEONODE_LB_HOST_IP=localhost
+      - GEONODE_LB_HOST_IP=tisdar.thuenen.de
       - GEONODE_LB_PORT=80
   #    - NGINX_BASE_URL=
