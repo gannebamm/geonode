@@ -22,10 +22,25 @@ x-common-django:
     - TIME_ZONE=${TIME_ZONE}
     - ALLOWED_HOSTS=['nginx','127.0.0.1','localhost','$HTTPS_HOST','$HTTP_HOST']
     - SECRET_KEY=${SECRET_KEY}
+
+    ## UNCOMMENT FOR SSL
+    #- GEOSERVER_PUBLIC_LOCATION=https://${HTTPS_HOST}/gs/
+    #- GEOSERVER_WEB_UI_LOCATION=https://${HTTPS_HOST}/geoserver/
+    #- SITEURL=https://${HTTPS_HOST}
+    ## COMMENT FOR SSL
+    - GEOSERVER_PUBLIC_LOCATION=http://${HTTP_HOST}/gs/
+    - GEOSERVER_WEB_UI_LOCATION=http://${HTTP_HOST}/geoserver/
+    - SITEURL=http://${HTTP_HOST}
+
+    # database info, ${variables} are read from .env
+    - DATABASE_URL=postgres://${GEONODE_DATABASE}:${GEONODE_DATABASE_PASSWORD}@postgres:5432/${GEONODE_DATABASE}
+    - GEODATABASE_URL=postgis://${GEONODE_GEODATABASE}:${GEONODE_GEODATABASE_PASSWORD}@postgres:5432/${GEONODE_GEODATABASE}
+
     # hardcoded
+    - DEFAULT_BACKEND_UPLOADER=geonode.importer
+    - DEFAULT_BACKEND_DATASTORE=datastore
     - DEBUG=False
     - DJANGO_SETTINGS_MODULE=geonode.settings
-    - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
     - BROKER_URL=amqp://rabbitmq:5672
     - STATIC_ROOT=/spcgeonode-static/
     - MEDIA_ROOT=/spcgeonode-media/
@@ -110,7 +125,8 @@ services:
       - HTTP_PORT=${HTTP_PORT}
       - ADMIN_USERNAME=${ADMIN_USERNAME}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+      - DATABASE_URL=postgres://${GEONODE_DATABASE}:${GEONODE_DATABASE_PASSWORD}@postgres:5432/${GEONODE_DATABASE}
+      - GEODATABASE_URL=postgis://${GEONODE_GEODATABASE}:${GEONODE_GEODATABASE_PASSWORD}@postgres:5432/${GEONODE_GEODATABASE}
     volumes:
       - geodatadir:/spcgeonode-geodatadir/
     restart: on-failure
@@ -132,7 +148,7 @@ services:
     image: olivierdalang/spcgeonode:pgdumper-latest
     build: ./pgdumper/
     environment:
-      - DATABASE_URL=postgres://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+      - DATABASE_URL=postgres://${GEONODE_DATABASE}:${GEONODE_DATABASE_PASSWORD}@postgres:5432/${GEONODE_DATABASE}
     volumes:
       - pgdumps:/spcgeonode-pgdumps/
     restart: on-failure
@@ -153,19 +169,22 @@ services:
 
   # PostGIS database.
   postgres:
-    image: mdillon/postgis:9.6-alpine
+    image: geonode/postgis:10
     environment:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - GEONODE_DATABASE=${GEONODE_DATABASE}
+      - GEONODE_DATABASE_PASSWORD=${GEONODE_DATABASE_PASSWORD}
+      - GEONODE_GEODATABASE=${GEONODE_GEODATABASE}
+      - GEONODE_GEODATABASE_PASSWORD=${GEONODE_GEODATABASE_PASSWORD}
+      - DATABASE_URL=postgres://${GEONODE_DATABASE}:${GEONODE_DATABASE_PASSWORD}@postgres:5432/${GEONODE_DATABASE}
+      - GEODATABASE_URL=postgis://${GEONODE_GEODATABASE}:${GEONODE_GEODATABASE_PASSWORD}@postgres:5432/${GEONODE_GEODATABASE}
     volumes:
       - database:/var/lib/postgresql/data/
     restart: on-failure
-
-  # Vanilla RabbitMQ service. This is needed by celery
-  rabbitmq:
-    image: rabbitmq:3.7-alpine
-    volumes:
-      - rabbitmq:/var/lib/rabbitmq
-    restart: on-failure
+    stdin_open: true
+    # uncomment to enable remote connections to postgres
+    #ports:
+    #  - "5432:5432"
 
 volumes:
   static:
