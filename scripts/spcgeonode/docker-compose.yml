@@ -181,10 +181,16 @@ services:
     volumes:
       - database:/var/lib/postgresql/data/
     restart: on-failure
-    stdin_open: true
     # uncomment to enable remote connections to postgres
     #ports:
     #  - "5432:5432"
+
+  # Vanilla RabbitMQ service. This is needed by celery
+  rabbitmq:
+    image: rabbitmq:3.7-alpine
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    restart: on-failure
 
 volumes:
   static:
