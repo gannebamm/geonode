@@ -53,8 +53,9 @@ x-common-django:
     # We get an exception after migrations on startup (it seems the monitoring app tries to resolve the geoserver domain name after it's migration, which can happen before oauth migrations on which geoserver startup depends...)
     - MONITORING_ENABLED=False
   volumes:
-    - static:/spcgeonode-static/
-    - media:/spcgeonode-media/
+    - ../../:/spcgeonode/
+    - /media/data/dockerdata/spc/static:/spcgeonode-static/
+    - /media/data/dockerdata/spc/media:/spcgeonode-media/
   restart: on-failure
 
 services:
@@ -68,30 +69,30 @@ services:
       retries: 1
       start_period: 60s
     entrypoint: ["/spcgeonode/scripts/spcgeonode/django/docker-entrypoint.sh"]
-    command: "uwsgi --chdir=/spcgeonode --module=geonode.wsgi --socket=:8000 --http=127.0.0.1:8001 --processes=5 --buffer-size=8192"
+    command: "uwsgi --chdir=/spcgeonode --module=geonode.wsgi --socket=:8000 --http=127.0.0.1:8001 --processes=5 --py-autoreload=2 --buffer-size=8192"
 
   # Celery worker that executes celery tasks created by Django.
   celery:
     << : *default-common-django
     entrypoint: []
-    command: 'celery worker --app=geonode.celery_app:app -l info -E'
+    command: 'celery worker --app=geonode.celery_app:app -l debug'
 
   # Celery beat that triggers scheduled tasks
   celerybeat:
     << : *default-common-django
     entrypoint: []
-    command: 'celery beat --app=geonode.celery_app:app --pidfile="/celerybeat.pid" -l info'
+    command: 'celery beat --app=geonode.celery_app:app --pidfile="/celerybeat.pid" -l debug'
 
   # Celery camera that monitors celery tasks and populate the djcelery django admin interface
   celerycam:
     << : *default-common-django
     entrypoint: []
-    command: 'celery events --app=geonode.celery_app:app --pidfile="/celeryev.pid" --camera=django_celery_monitor.camera.Camera --frequency=2.0 -l info'
+    command: 'celery events --app=geonode.celery_app:app --pidfile="/celeryev.pid" --camera=django_celery_monitor.camera.Camera --frequency=2.0 -l debug'
 
   # Nginx is serving django static and media files and proxies to django and geonode
   nginx:
-    image: olivierdalang/spcgeonode:nginx-latest
-    build: ./nginx/
+    image: tisdar/nginx:spc
+    build: ./nginx_tisdar/
     environment:
       - HTTPS_HOST=${HTTPS_HOST}
       - HTTP_HOST=${HTTP_HOST}
@@ -101,9 +102,9 @@ services:
       - "${HTTP_PORT}:80"
       - "${HTTPS_PORT}:443"
     volumes:
-      - static:/spcgeonode-static/
-      - media:/spcgeonode-media/
-      - certificates:/spcgeonode-certificates/
+      - /media/data/dockerdata/spc/static:/spcgeonode-static/
+      - /media/data/dockerdata/spc/media:/spcgeonode-media/
+      - /media/data/dockerdata/certificates:/spcgeonode-certificates/
     restart: on-failure
 
   # Geoserver backend
@@ -126,45 +127,20 @@ services:
       - DATABASE_URL=postgres://${GEONODE_DATABASE}:${GEONODE_DATABASE_PASSWORD}@postgres:5432/${GEONODE_DATABASE}
       - GEODATABASE_URL=postgis://${GEONODE_GEODATABASE}:${GEONODE_GEODATABASE_PASSWORD}@postgres:5432/${GEONODE_GEODATABASE}      
     volumes:
-      - geodatadir:/spcgeonode-geodatadir/
+      - /media/data/dockerdata/spc/geodatadir:/spcgeonode-geodatadir/
     restart: on-failure
 
-  # Gets and installs letsencrypt certificates
-  letsencrypt:
-    image: olivierdalang/spcgeonode:letsencrypt-latest
-    build: ./letsencrypt/
-    environment:
-      - HTTPS_HOST=${HTTPS_HOST}
-      - HTTP_HOST=${HTTP_HOST}
-      - ADMIN_EMAIL=${ADMIN_EMAIL}
-      - LETSENCRYPT_MODE=${LETSENCRYPT_MODE}
-    volumes:
-      - certificates:/spcgeonode-certificates/
-    restart: on-failure
 
   pgdumper:
     image: olivierdalang/spcgeonode:pgdumper-latest
     build: ./pgdumper/
     volumes:
-      - pgdumps:/spcgeonode-pgdumps/
+      - /media/data/dockerdata/spc/db_dumps:/spcgeonode-pgdumps/
     restart: on-failure
     environment:
       - DATABASE_URL=postgres://${GEONODE_DATABASE}:${GEONODE_DATABASE_PASSWORD}@postgres:5432/${GEONODE_DATABASE}
       - GEODATABASE_URL=postgis://${GEONODE_GEODATABASE}:${GEONODE_GEODATABASE_PASSWORD}@postgres:5432/${GEONODE_GEODATABASE}
 
-  rclone:
-    image: olivierdalang/spcgeonode:rclone-latest
-    build: ./rclone/
-    environment:
-      - S3_ACCESS_KEY=${S3_ACCESS_KEY}
-      - S3_SECRET_KEY=${S3_SECRET_KEY}
-      - S3_REGION=${S3_REGION}
-      - S3_BUCKET=${S3_BUCKET}
-    volumes:
-      - pgdumps:/spcgeonode-pgdumps/
-      - media:/spcgeonode-media/
-      - geodatadir:/spcgeonode-geodatadir/
-    restart: on-failure
 
   # PostGIS database.
   postgres:
@@ -182,8 +158,8 @@ services:
       - database:/var/lib/postgresql/data/
     restart: on-failure
     # uncomment to enable remote connections to postgres
-    #ports:
-    #  - "5432:5432"
+    ports:
+      - "5432:5432"
 
   # Vanilla RabbitMQ service. This is needed by celery
   rabbitmq:
