@@ -24,6 +24,7 @@ else
 fi
 
 export GEOSERVER_PUBLIC_LOCATION="${SITEURL}/geoserver/"
+export GEOSERVER_WEB_UI_LOCATION="${SITEURL}/geoserver/"
 
 # Run migrations
 echo 'Running initialize.py...'
