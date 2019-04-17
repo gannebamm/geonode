@@ -112,7 +112,7 @@ class TreeWidget(TaggitWidget):
         if isinstance(value, basestring):
             vals = value
         elif value:
-            vals = ','.join([str(i.tag.name) for i in value])
+            vals = ','.join([i.tag.name for i in value])
         else:
             vals = ""
         output = ["""<div class="keywords-container"><span class="input-group">
