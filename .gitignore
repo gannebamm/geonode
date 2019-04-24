@@ -1,3 +1,6 @@
+# SSL certificates
+*.pem
+
 # build artifacts
 *.pyc
 *.egg-info
