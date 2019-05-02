@@ -130,21 +130,26 @@ sed -i -r "s|<proxyBaseUrl>.*</proxyBaseUrl>|<proxyBaseUrl>$BASEURL</proxyBaseUr
 echo "-----------------------------------------------------"
 echo "6. Importing SSL certificate (if using HTTPS)"
 
-# https://docs.geoserver.org/stable/en/user/community/oauth2/index.html#ssl-trusted-certificates
-if [ ! -z "$HTTPS_HOST" ]; then
-    PASSWORD=$(openssl rand -base64 18)
+# If we recover from a backup geoserver data dir the keystore is allready initialized
+# GeoServer will not accept the old keystore due to mismatches
+# therefore we could skip this if we use the flag RECOVERY:
+if [ ! -z "$RECOVERY" ]; then
+    # https://docs.geoserver.org/stable/en/user/community/oauth2/index.html#ssl-trusted-certificates    
+    if [ ! -z "$HTTPS_HOST" ]; then
+        PASSWORD=$(openssl rand -base64 18)
 
-    openssl s_client -connect ${HTTPS_HOST#https://}:${HTTPS_PORT} </dev/null |
-        openssl x509 -out server.crt
+        openssl s_client -connect ${HTTPS_HOST#https://}:${HTTPS_PORT} </dev/null |
+            openssl x509 -out server.crt
 
-    # create a keystore and import certificate
-    keytool -import -noprompt -trustcacerts \
-            -alias ${HTTPS_HOST} -file server.crt \
-            -keystore /keystore.jks -storepass ${PASSWORD}
+        # create a keystore and import certificate
+        keytool -import -noprompt -trustcacerts \
+                -alias ${HTTPS_HOST} -file server.crt \
+                -keystore /keystore.jks -storepass ${PASSWORD}
 
-    rm server.crt
+        rm server.crt
 
-    JAVA_OPTS="$JAVA_OPTS -Djavax.net.ssl.keyStore=/keystore.jks -Djavax.net.ssl.keyStorePassword=$PASSWORD"
+        JAVA_OPTS="$JAVA_OPTS -Djavax.net.ssl.keyStore=/keystore.jks -Djavax.net.ssl.keyStorePassword=$PASSWORD"
+    fi
 fi
 
 echo "-----------------------------------------------------"

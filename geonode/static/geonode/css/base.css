@@ -8028,3 +8028,7 @@ form-inline {
   color: #bd362f;
   font-style: italic;
 }
+
+.profile-details small {
+    word-wrap: break-word;
+}

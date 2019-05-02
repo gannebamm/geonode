@@ -47,6 +47,7 @@ x-common-django:
     - DEFAULT_BACKEND_UPLOADER=geonode.importer
     - DEFAULT_BACKEND_DATASTORE=datastore
     ## --
+    - LANGUAGE_CODE=de
     - DEBUG=False
     - DJANGO_SETTINGS_MODULE=geonode.settings
     - BROKER_URL=amqp://rabbitmq:5672
@@ -63,13 +64,18 @@ x-common-django:
     - MONITORING_ENABLED=False
   volumes:
     - ../../:/spcgeonode/
-    - /media/data/dockerdata/spc/static:/spcgeonode-static/
-    - /media/data/dockerdata/spc/media:/spcgeonode-media/
+    - /media/data/dockerdata/tisdar/static:/spcgeonode-static/
+    - /media/data/dockerdata/tisdar/media:/spcgeonode-media/
+    # add geoserver data directory for django backup functionality
+    - /media/data/dockerdata/tisdar/geodatadir:/opts/geoserver/data
+    # this could be the dedicated backup folder with backups via django
+    #- /media/data/dockerdata/tisdar/backups:/opts/backups/
   restart: on-failure
 
 services:
   # Our custom django application. It includes Geonode.
   django:
+    container_name: django_${COMPOSE_PROJECT_NAME}
     << : *default-common-django
     healthcheck:
       test: "curl --fail --silent --write-out 'HTTP CODE : %{http_code}\n' --output /dev/null http://127.0.0.1:8001/"
@@ -100,6 +106,7 @@ services:
 
   # Nginx is serving django static and media files and proxies to django and geonode
   nginx:
+    container_name: nginx_${COMPOSE_PROJECT_NAME}
     image: tisdar/nginx:spc
     build: ./nginx_tisdar/
     environment:
@@ -111,13 +118,14 @@ services:
       - "${HTTP_PORT}:80"
       - "${HTTPS_PORT}:443"
     volumes:
-      - /media/data/dockerdata/spc/static:/spcgeonode-static/
-      - /media/data/dockerdata/spc/media:/spcgeonode-media/
+      - /media/data/dockerdata/tisdar/static:/spcgeonode-static/
+      - /media/data/dockerdata/tisdar/media:/spcgeonode-media/
       - /media/data/dockerdata/certificates:/spcgeonode-certificates/
     restart: on-failure
 
   # Geoserver backend
   geoserver:
+    container_name: geoserver_${COMPOSE_PROJECT_NAME}
     image: olivierdalang/spcgeonode:geoserver-latest
     build: ./geoserver/
     healthcheck:
@@ -127,6 +135,7 @@ services:
       retries: 1
       start_period: 60s
     environment:
+      - RECOVERY=True
       - HTTPS_HOST=${HTTPS_HOST}
       - HTTPS_PORT=${HTTPS_PORT}
       - HTTP_HOST=${HTTP_HOST}
@@ -136,24 +145,42 @@ services:
       - DATABASE_URL=postgres://${GEONODE_DATABASE}:${GEONODE_DATABASE_PASSWORD}@postgres:5432/${GEONODE_DATABASE}
       - GEODATABASE_URL=postgis://${GEONODE_GEODATABASE}:${GEONODE_GEODATABASE_PASSWORD}@postgres:5432/${GEONODE_GEODATABASE}      
     volumes:
-      - /media/data/dockerdata/spc/geodatadir:/spcgeonode-geodatadir/
+      - /media/data/dockerdata/tisdar/geodatadir:/spcgeonode-geodatadir/
     restart: on-failure
 
 
-  pgdumper:
-    image: olivierdalang/spcgeonode:pgdumper-latest
+  # dumps the non geodata db
+  pgdumper_nogeo:
+    container_name: dumper_${GEONODE_DATABASE}_${COMPOSE_PROJECT_NAME}
+    image: tisdar/pgdumper:latest
     build: ./pgdumper/
     volumes:
-      - /media/data/dockerdata/spc/db_dumps:/spcgeonode-pgdumps/
+      - /media/data/dockerdata/tisdar/db_dumps:/spcgeonode-pgdumps/
     restart: on-failure
     environment:
+      - DATABASE=${GEONODE_DATABASE}
       - DATABASE_URL=postgres://${GEONODE_DATABASE}:${GEONODE_DATABASE_PASSWORD}@postgres:5432/${GEONODE_DATABASE}
-      - GEODATABASE_URL=postgis://${GEONODE_GEODATABASE}:${GEONODE_GEODATABASE_PASSWORD}@postgres:5432/${GEONODE_GEODATABASE}
+
+  # dumps the geodata db
+  pgdumper_geo:
+    container_name: dumper_${GEONODE_GEODATABASE}_${COMPOSE_PROJECT_NAME}
+    image: tisdar/pgdumper:latest
+    build: ./pgdumper/
+    volumes:
+      - /media/data/dockerdata/tisdar/db_dumps:/spcgeonode-pgdumps/
+    restart: on-failure
+    environment:
+      - DATABASE=${GEONODE_GEODATABASE}
+      # pgdumper needs postgres:// as connection string for the geodatabase
+      - DATABASE_URL=postgres://${GEONODE_GEODATABASE}:${GEONODE_GEODATABASE_PASSWORD}@postgres:5432/${GEONODE_GEODATABASE} 
 
 
   # PostGIS database.
   postgres:
-    image: geonode/postgis:10
+    container_name: db_${COMPOSE_PROJECT_NAME}
+    # custom image with de_DE.UTF-8 locale
+    image: tisdar/postgis:10
+    build: ./postgis/
     environment:
       # database info, ${variables} are read from .env
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -164,7 +191,7 @@ services:
       - DATABASE_URL=postgres://${GEONODE_DATABASE}:${GEONODE_DATABASE_PASSWORD}@postgres:5432/${GEONODE_DATABASE}
       - GEODATABASE_URL=postgis://${GEONODE_GEODATABASE}:${GEONODE_GEODATABASE_PASSWORD}@postgres:5432/${GEONODE_GEODATABASE}
     volumes:
-      - database:/var/lib/postgresql/data/
+      - /media/data/dockerdata/tisdar/db_data:/var/lib/postgresql/data/
     restart: on-failure
     # uncomment to enable remote connections to postgres
     ports:
@@ -172,6 +199,7 @@ services:
 
   # Vanilla RabbitMQ service. This is needed by celery
   rabbitmq:
+    container_name: rabbitmq_${COMPOSE_PROJECT_NAME}
     image: rabbitmq:3.7-alpine
     volumes:
       - rabbitmq:/var/lib/rabbitmq

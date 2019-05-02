@@ -112,8 +112,9 @@ def run(self, request, queryset):
             return TemplateResponse(
                 request,
                 'admin/backups/confirm_cancel.html',
-                context,
-                current_app=self.admin_site.name)
+                context)
+                #, see https://github.com/GeoNode/geonode/issues/4352
+                #current_app=self.admin_site.name)
 
 
 def restore(self, request, queryset):
