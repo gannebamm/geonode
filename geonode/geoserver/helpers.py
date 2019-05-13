@@ -430,7 +430,9 @@ def cascading_delete(cat, layer_name):
                     _name = s.name[:-len(m.group())] if m else s.name
                     _s = "%s_%s" % (settings.DEFAULT_WORKSPACE, _name)
                     for _gs in gs_styles:
-                        if _s in _gs.name and _gs not in styles:
+                        if ((_gs.name and _gs.name.startswith("%s_" % settings.DEFAULT_WORKSPACE)) or
+                            (_s in _gs.name)) and\
+                        _gs not in styles:
                             ws_styles.append(_gs)
             styles = styles + ws_styles
         cat.delete(lyr)
@@ -454,7 +456,6 @@ def cascading_delete(cat, layer_name):
         except BaseException:
             cat._cache.clear()
             cat.reset()
-        #    cat.reload()  # this preservers the integrity of geoserver
 
         if store.resource_type == 'dataStore' and 'dbtype' in store.connection_parameters and \
                 store.connection_parameters['dbtype'] == 'postgis':
@@ -1036,7 +1037,6 @@ def set_styles(layer, gs_catalog):
                 style = default_style
             if style:
                 layer.default_style = save_style(style)
-                # FIXME: This should remove styles that are no longer valid
                 style_set.append(layer.default_style)
         try:
             if gs_layer.styles:
@@ -1212,6 +1212,67 @@ def cleanup(name, uuid):
                        'import for layer: %s', name)
 
 
+def create_geoserver_db_featurestore(
+        store_type=None, store_name=None,
+        author_name='admin', author_email='admin@geonode.org',
+        charset="UTF-8", workspace=None):
+    cat = gs_catalog
+    dsname = store_name or ogc_server_settings.DATASTORE
+    # get or create datastore
+    ds_exists = False
+    try:
+        if dsname:
+            ds = cat.get_store(dsname)
+        else:
+            return None
+        if ds is None:
+            raise FailedRequestError
+        ds_exists = True
+    except FailedRequestError:
+        logging.info(
+            'Creating target datastore %s' % dsname)
+        ds = cat.create_datastore(dsname, workspace=workspace)
+        db = ogc_server_settings.datastore_db
+        db_engine = 'postgis' if \
+            'postgis' in db['ENGINE'] else db['ENGINE']
+        ds.connection_parameters.update(
+            {'Evictor run periodicity': 300,
+             'Estimated extends': 'true',
+             'Estimated extends': 'true',
+             'fetch size': 100000,
+             'encode functions': 'false',
+             'Expose primary keys': 'true',
+             'validate connections': 'true',
+             'Support on the fly geometry simplification': 'true',
+             'Connection timeout': 300,
+             'create database': 'false',
+             'Batch insert size': 30,
+             'preparedStatements': 'true',
+             'min connections': 10,
+             'max connections': 100,
+             'Evictor tests per run': 3,
+             'Max connection idle time': 300,
+             'Loose bbox': 'true',
+             'Test while idle': 'true',
+             'host': db['HOST'],
+             'port': db['PORT'] if isinstance(
+                 db['PORT'], basestring) else str(db['PORT']) or '5432',
+             'database': db['NAME'],
+             'user': db['USER'],
+             'passwd': db['PASSWORD'],
+             'dbtype': db_engine}
+        )
+
+    if ds_exists:
+        ds.save_method = "PUT"
+
+    cat.save(ds)
+    ds = get_store(cat, dsname, workspace=workspace)
+    assert ds.enabled
+
+    return ds
+
+
 def _create_featurestore(name, data, overwrite=False, charset="UTF-8", workspace=None):
 
     cat = gs_catalog
@@ -1243,35 +1304,7 @@ def _create_db_featurestore(name, data, overwrite=False, charset="UTF-8", worksp
     db = ogc_server_settings.datastore_db
     # dsname = ogc_server_settings.DATASTORE
     dsname = db['NAME']
-
-    ds_exists = False
-    try:
-        ds = get_store(cat, dsname, workspace=workspace)
-        ds_exists = True
-    except FailedRequestError:
-        ds = cat.create_datastore(dsname, workspace=workspace)
-        db = ogc_server_settings.datastore_db
-        db_engine = 'postgis' if \
-            'postgis' in db['ENGINE'] else db['ENGINE']
-        ds.connection_parameters.update(
-            {'validate connections': 'true',
-             'max connections': '10',
-             'min connections': '1',
-             'fetch size': '1000',
-             'host': db['HOST'],
-             'port': db['PORT'] if isinstance(
-                 db['PORT'], basestring) else str(db['PORT']) or '5432',
-             'database': db['NAME'],
-             'user': db['USER'],
-             'passwd': db['PASSWORD'],
-             'dbtype': db_engine}
-        )
-
-    if ds_exists:
-        ds.save_method = "PUT"
-
-    cat.save(ds)
-    ds = get_store(cat, dsname, workspace=workspace)
+    ds = create_geoserver_db_featurestore(store_name=dsname, workspace=workspace)
 
     try:
         cat.add_data_to_store(ds,

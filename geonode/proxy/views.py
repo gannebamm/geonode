@@ -92,25 +92,27 @@ def get_headers(request, url, raw_url):
         headers["Content-Type"] = request.META["CONTENT_TYPE"]
 
     access_token = None
-    # we give precedence to obtained from Aithorization headers
-    if 'HTTP_AUTHORIZATION' in request.META:
-        auth_header = request.META.get(
-            'HTTP_AUTHORIZATION',
-            request.META.get('HTTP_AUTHORIZATION2'))
-        if auth_header:
-            access_token = get_token_from_auth_header(auth_header)
-    # otherwise we check if a session is active
-    elif request and request.user.is_authenticated:
-        access_token = get_token_object_from_session(request.session)
 
-        # we extend the token in case the session is active but the token expired
-        if access_token and access_token.is_expired():
-            extend_token(access_token)
+    site_url = urlsplit(settings.SITEURL)
+    if site_url.netloc == url.netloc:
+        # we give precedence to obtained from Aithorization headers
+        if 'HTTP_AUTHORIZATION' in request.META:
+            auth_header = request.META.get(
+                'HTTP_AUTHORIZATION',
+                request.META.get('HTTP_AUTHORIZATION2'))
+            if auth_header:
+                access_token = get_token_from_auth_header(auth_header)
+        # otherwise we check if a session is active
+        elif request and request.user.is_authenticated:
+            access_token = get_token_object_from_session(request.session)
+
+            # we extend the token in case the session is active but the token expired
+            if access_token and access_token.is_expired():
+                extend_token(access_token)
 
     if access_token:
         headers['Authorization'] = 'Bearer %s' % access_token
 
-    site_url = urlsplit(settings.SITEURL)
     pragma = "no-cache"
     referer = request.META[
         "HTTP_REFERER"] if "HTTP_REFERER" in request.META else \
@@ -209,7 +211,7 @@ def proxy(request, url=None, response_callback=None,
                                             headers=headers,
                                             timeout=timeout,
                                             user=request.user)
-    content = response.content
+    content = response.content or response.reason
     status = response.status_code
     content_type = response.headers.get('Content-Type')
 
@@ -242,8 +244,17 @@ def proxy(request, url=None, response_callback=None,
             _response['Location'] = response.getheader('Location')
             return _response
         else:
+            def _get_message(text):
+                _s = text.decode("utf-8", "replace")
+                try:
+                    found = re.search('<b>Message</b>(.+?)</p>', _s).group(1).strip()
+                except BaseException:
+                    found = _s
+                return found
+
             return HttpResponse(
                 content=content,
+                reason=_get_message(content) if status not in (200, 201) else None,
                 status=status,
                 content_type=content_type)
 

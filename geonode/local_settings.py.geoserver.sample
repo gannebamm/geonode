@@ -509,6 +509,7 @@ LOGGING = {
 }
 
 # Additional settings
+X_FRAME_OPTIONS = 'ALLOW-FROM %s' % SITEURL
 CORS_ORIGIN_ALLOW_ALL = True
 
 GEOIP_PATH = "/usr/local/share/GeoIP"
@@ -524,7 +525,7 @@ if MONITORING_ENABLED:
             ('geonode.contrib.monitoring.middleware.MonitoringMiddleware',)
     MONITORING_CONFIG = None
     MONITORING_HOST_NAME = os.getenv("MONITORING_HOST_NAME", HOSTNAME)
-    MONITORING_SERVICE_NAME = 'geonode'
+    MONITORING_SERVICE_NAME = os.getenv("MONITORING_SERVICE_NAME", 'local-geonode')
 
 
 # Documents Thumbnails
