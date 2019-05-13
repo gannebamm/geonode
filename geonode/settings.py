@@ -61,12 +61,13 @@ EMAIL_ENABLE = strtobool(os.getenv('EMAIL_ENABLE', 'False'))
 if EMAIL_ENABLE:
     EMAIL_BACKEND = os.getenv('DJANGO_EMAIL_BACKEND',
                               default='django.core.mail.backends.smtp.EmailBackend')
-    EMAIL_HOST = 'localhost'
-    EMAIL_PORT = 25
-    EMAIL_HOST_USER = ''
-    EMAIL_HOST_PASSWORD = ''
-    EMAIL_USE_TLS = False
-    DEFAULT_FROM_EMAIL = 'GeoNode <no-reply@geonode.org>'
+    EMAIL_HOST = os.getenv('EMAIL_HOST',
+                              default='localhost')
+    EMAIL_PORT = os.getenv('EMAIL_PORT', default=25)
+    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', default='')
+    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', default='')
+    EMAIL_USE_TLS = strtobool(os.getenv('EMAIL_USE_TLS', 'False'))
+    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', default='GeoNode <no-reply@geonode.org>')
 else:
     EMAIL_BACKEND = os.getenv('DJANGO_EMAIL_BACKEND',
                               default='django.core.mail.backends.console.EmailBackend')

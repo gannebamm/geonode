@@ -1,3 +1,7 @@
+# .env files
+.env
+scripts/spcgeonode/.env
+
 # SSL certificates
 *.pem
 
