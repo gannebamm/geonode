@@ -31,6 +31,9 @@ x-common-django:
     - TIME_ZONE=${TIME_ZONE}
     - ALLOWED_HOSTS=['nginx','127.0.0.1','localhost','$HTTPS_HOST','$HTTP_HOST']
     - SECRET_KEY=${SECRET_KEY}
+    # data
+    - ALLOWED_DOCUMENT_TYPES=${ALLOWED_DOCUMENT_TYPES}
+    - MAX_DOCUMENT_SIZE=${MAX_DOCUMENT_SIZE}
 
     # database info, ${variables} are read from .env
     - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -47,8 +50,18 @@ x-common-django:
     - DEFAULT_BACKEND_UPLOADER=geonode.importer
     - DEFAULT_BACKEND_DATASTORE=datastore
     ## --
-    - LANGUAGE_CODE=de
     - DEBUG=False
+    - LANGUAGE_CODE=de
+    ## MAIL
+    - EMAIL_USE_SSL=True
+    - EMAIL_PORT=465
+    - EMAIL_ENABLE=${EMAIL_ENABLE}
+    - EMAIL_HOST=${EMAIL_HOST} #if not TLS use HTTP_HOST instead
+    - THEME_ACCOUNT_CONTACT_EMAIL=${ADMIN_EMAIL}
+    - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+    - EMAIL_HOST_PASSWORD=${ADMIN_PASSWORD}
+    - DEFAULT_FROM_EMAIL='TISDAR <${ADMIN_EMAIL}>'
+
     - DJANGO_SETTINGS_MODULE=geonode.settings
     - BROKER_URL=amqp://rabbitmq:5672
     - STATIC_ROOT=/spcgeonode-static/
@@ -135,7 +148,7 @@ services:
       retries: 1
       start_period: 60s
     environment:
-      - RECOVERY=True
+      - RECOVERY=False
       - HTTPS_HOST=${HTTPS_HOST}
       - HTTPS_PORT=${HTTPS_PORT}
       - HTTP_HOST=${HTTP_HOST}

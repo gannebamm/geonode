@@ -23,7 +23,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: GeoNode\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2019-04-26 18:04+0200\n"
+"POT-Creation-Date: 2019-05-20 11:51+0200\n"
 "PO-Revision-Date: 2016-08-23 13:57+0000\n"
 "Last-Translator: Julien Collaer <julien.collaer@opengeode.be>\n"
 "Language-Team: English (http://www.transifex.com/geonode/geonode/language/"
@@ -548,8 +548,8 @@ msgstr "For example \"text/xml\""
 #: geonode/client/templates/worldmap/maps/map_worldmap.html:320
 #: geonode/contrib/monitoring/frontend/index.html:143
 #: geonode/templates/500.html:180 geonode/templates/500.html:199
-#: geonode/templates/base.html:187 geonode/templates/base.html:345
-#: geonode/templates/base.html:380
+#: geonode/templates/base.html:259 geonode/templates/base.html:425
+#: geonode/templates/base.html:460
 msgid "About"
 msgstr "About"
 
@@ -597,6 +597,7 @@ msgstr "Abstract"
 #: geonode/catalogue/templates/geonode_metadata_full.html:93
 #: geonode/layers/templates/layers/layer_detail.html:698
 #: geonode/services/templates/services/service_detail.html:8
+#: geonode/services/templates/services/service_list.html:17
 #: geonode/templates/metadata_detail.html:76
 msgid "Type"
 msgstr "Type"
@@ -655,7 +656,7 @@ msgstr "Purpose"
 #: geonode/base/templates/base/_resourcebase_info_panel.html:151
 #: geonode/catalogue/templates/geonode_metadata_full.html:103
 #: geonode/contrib/monitoring/frontend/index.html:145
-#: geonode/templates/500.html:201 geonode/templates/base.html:382
+#: geonode/templates/500.html:201 geonode/templates/base.html:462
 #: geonode/templates/metadata_detail.html:237
 msgid "Language"
 msgstr "Language"
@@ -865,8 +866,8 @@ msgstr "Upload Layer"
 #: geonode/contrib/monitoring/frontend/index.html:128
 #: geonode/maps/templates/maps/map_list.html:10
 #: geonode/maps/templates/maps/map_metadata_advanced.html:16
-#: geonode/templates/500.html:172 geonode/templates/base.html:179
-#: geonode/templates/base.html:337
+#: geonode/templates/500.html:172 geonode/templates/base.html:251
+#: geonode/templates/base.html:417
 msgid "Explore Maps"
 msgstr "Explore Maps"
 
@@ -937,7 +938,7 @@ msgstr "Remove Map"
 #: geonode/maps/templates/maps/map_detail.html:313
 #: geonode/templates/500.html:228
 #: geonode/templates/_bulk_permissions_form.html:19
-#: geonode/templates/base.html:424 geonode/templates/metadata_base.html:134
+#: geonode/templates/base.html:504 geonode/templates/metadata_base.html:134
 #: geonode/templates/metadata_base.html:168
 #: geonode/templates/metadata_base.html:185
 msgid "Close"
@@ -1067,8 +1068,8 @@ msgid "Geometry type"
 msgstr "property type"
 
 #: geonode/contrib/createlayer/templates/createlayer/layer_create.html:6
-#: geonode/templates/500.html:160 geonode/templates/base.html:166
-#: geonode/templates/base.html:325
+#: geonode/templates/500.html:160 geonode/templates/base.html:238
+#: geonode/templates/base.html:405
 #, fuzzy
 #| msgid "Create a Map"
 msgid "Create Layer"
@@ -1214,42 +1215,49 @@ msgstr "Add to Favorites"
 msgid "Favorites for"
 msgstr "Favorites for"
 
+#: geonode/contrib/geosites/apps.py:29
+msgid "Geosites"
+msgstr ""
+
 #: geonode/contrib/geosites/site_template/templates/site_index.html:9
 #: geonode/contrib/geosites/templates/master_index.html:10
 #: geonode/templates/index.html:19
 msgid "Welcome"
 msgstr "Welcome"
 
-#: geonode/contrib/geosites/site_template/templates/site_index.html:10
-#: geonode/contrib/geosites/templates/master_index.html:11
+#: geonode/contrib/geosites/site_template/templates/site_index.html:11
+#: geonode/contrib/geosites/templates/master_index.html:12
 #: geonode/templates/index.html:21
 msgid ""
 "GeoNode is an open source platform for sharing geospatial data and maps."
 msgstr ""
 "GeoNode is an open source platform for sharing geospatial data and maps."
 
-#: geonode/contrib/geosites/site_template/templates/site_index.html:11
-#: geonode/contrib/geosites/templates/master_index.html:12
-msgid ""
-"If you have any questions about the software or service, join our <a href="
-"\"https://groups.google.com/d/forum/geonode-users\">mailing list</a>."
+#: geonode/contrib/geosites/site_template/templates/site_index.html:14
+#: geonode/contrib/geosites/templates/master_index.html:15
+#: geonode/templates/index.html:23
+msgid "http://docs.geonode.org/en/master/tutorials/users/index.html"
 msgstr ""
-"If you have any questions about the software or service, join our <a href="
-"\"https://groups.google.com/d/forum/geonode-users\">mailing list</a>."
 
-#: geonode/contrib/geosites/site_template/templates/site_index.html:12
-#: geonode/contrib/geosites/templates/master_index.html:13
-msgid "Need help?"
-msgstr "Need help?"
-
-#: geonode/contrib/geosites/site_template/templates/site_index.html:12
-#: geonode/contrib/geosites/templates/master_index.html:13
-msgid "Getting Started"
+#: geonode/contrib/geosites/site_template/templates/site_index.html:15
+#: geonode/contrib/geosites/templates/master_index.html:16
+#: geonode/templates/index.html:23
+#, fuzzy
+#| msgid "Getting Started"
+msgid "Get Started &raquo;"
 msgstr "Getting Started"
 
-#: geonode/contrib/geosites/templates/master_index.html:25
-#: geonode/contrib/geosites/templates/master_index.html:35
-#: geonode/contrib/geosites/templates/master_index.html:45
+#: geonode/contrib/geosites/templates/master_index.html:30
+#: geonode/templates/index.html:38
+#, fuzzy
+#| msgid "Search"
+msgid "Search for Data."
+msgstr "Search"
+
+#: geonode/contrib/geosites/templates/master_index.html:61
+#: geonode/contrib/geosites/templates/master_index.html:71
+#: geonode/contrib/geosites/templates/master_index.html:81
+#: geonode/contrib/geosites/templates/master_index.html:91
 #: geonode/layers/templates/upload/layer_upload_time.html:43
 #: geonode/templates/index.html:259 geonode/templates/index.html:269
 #: geonode/templates/index.html:279 geonode/templates/index.html:289
@@ -1259,7 +1267,7 @@ msgstr "Getting Started"
 msgid "No"
 msgstr "No"
 
-#: geonode/contrib/geosites/templates/master_index.html:25
+#: geonode/contrib/geosites/templates/master_index.html:61
 #: geonode/contrib/monitoring/models.py:169
 #: geonode/layers/templates/layers/layer_detail.html:483
 #: geonode/templates/index.html:259
@@ -1272,7 +1280,7 @@ msgid_plural "Layers"
 msgstr[0] "Layer"
 msgstr[1] "Layer"
 
-#: geonode/contrib/geosites/templates/master_index.html:26
+#: geonode/contrib/geosites/templates/master_index.html:62
 #: geonode/templates/index.html:260
 msgid ""
 "Click to search for geospatial data published by other users, organizations "
@@ -1281,17 +1289,17 @@ msgstr ""
 "Click to search for geospatial data published by other users, organizations "
 "and public sources. Download data in standard formats."
 
-#: geonode/contrib/geosites/templates/master_index.html:28
+#: geonode/contrib/geosites/templates/master_index.html:64
 #: geonode/templates/index.html:262
 msgid "Add layers"
 msgstr "Add layers"
 
-#: geonode/contrib/geosites/templates/master_index.html:30
+#: geonode/contrib/geosites/templates/master_index.html:66
 #: geonode/templates/index.html:264
 msgid "Explore layers"
 msgstr "Explore layers"
 
-#: geonode/contrib/geosites/templates/master_index.html:35
+#: geonode/contrib/geosites/templates/master_index.html:71
 #: geonode/contrib/monitoring/models.py:170
 #: geonode/contrib/worldmap/wm_extra/templates/wm_extra/maps/map_detail.html:160
 #: geonode/maps/templates/maps/map_detail.html:163
@@ -1304,25 +1312,64 @@ msgid_plural "Maps"
 msgstr[0] "Map"
 msgstr[1] "Map"
 
-#: geonode/contrib/geosites/templates/master_index.html:36
+#: geonode/contrib/geosites/templates/master_index.html:72
+#: geonode/templates/index.html:270
+#, fuzzy
+#| msgid ""
+#| "Data is available for browsing, aggregating and styling to generate maps "
+#| "which can be shared publicly or restricted to specific users only."
 msgid ""
 "Data is available for browsing, aggregating and styling to generate maps "
-"which can be shared publicly or restricted to specific users only."
+"which can be saved, downloaded, shared publicly or restricted to specify "
+"users only."
 msgstr ""
 "Data is available for browsing, aggregating and styling to generate maps "
 "which can be shared publicly or restricted to specific users only."
 
-#: geonode/contrib/geosites/templates/master_index.html:38
+#: geonode/contrib/geosites/templates/master_index.html:74
 #: geonode/templates/index.html:272
 msgid "Create maps"
 msgstr "Create maps"
 
-#: geonode/contrib/geosites/templates/master_index.html:40
+#: geonode/contrib/geosites/templates/master_index.html:76
 #: geonode/templates/index.html:274
 msgid "Explore maps"
 msgstr "Explore maps"
 
-#: geonode/contrib/geosites/templates/master_index.html:45
+#: geonode/contrib/geosites/templates/master_index.html:81
+#: geonode/contrib/monitoring/models.py:171
+#: geonode/documents/templates/documents/document_detail.html:150
+#: geonode/templates/index.html:279
+#: geonode/templates/pinax/notifications/request_download_resourcebase/full.txt:9
+#, fuzzy
+#| msgid "Document"
+msgid "Document"
+msgid_plural "Documents"
+msgstr[0] "Document"
+msgstr[1] "Document"
+
+#: geonode/contrib/geosites/templates/master_index.html:82
+#: geonode/templates/index.html:280
+msgid ""
+"As for the layers and maps GeoNode allows to publish tabular and text data, "
+"manage theirs metadata and associated documents."
+msgstr ""
+
+#: geonode/contrib/geosites/templates/master_index.html:84
+#: geonode/templates/index.html:282
+#, fuzzy
+#| msgid "Add Comment"
+msgid "Add documents"
+msgstr "Add Comment"
+
+#: geonode/contrib/geosites/templates/master_index.html:86
+#: geonode/templates/index.html:284
+#, fuzzy
+#| msgid "Explore Documents"
+msgid "Explore documents"
+msgstr "Explore Documents"
+
+#: geonode/contrib/geosites/templates/master_index.html:91
 #: geonode/templates/index.html:289
 #: geonode/templates/pinax/notifications/account_approve/full.txt:1
 msgid "User"
@@ -1330,21 +1377,31 @@ msgid_plural "Users"
 msgstr[0] "User"
 msgstr[1] "Users"
 
-#: geonode/contrib/geosites/templates/master_index.html:46
+#: geonode/contrib/geosites/templates/master_index.html:92
+#: geonode/templates/index.html:290
+#, fuzzy
+#| msgid ""
+#| "GeoNode allows registered users to easily upload geospatial data in "
+#| "several formats including shapefile and GeoTiff."
 msgid ""
-"GeoNode allows registered users to easily upload geospatial data in several "
-"formats including shapefile and GeoTiff."
+"Geonode allows registered users to easily upload geospatial data and various "
+"documents in several formats."
 msgstr ""
 "GeoNode allows registered users to easily upload geospatial data in several "
 "formats including shapefile and GeoTiff."
 
-#: geonode/contrib/geosites/templates/master_index.html:47
+#: geonode/contrib/geosites/templates/master_index.html:93
 #: geonode/templates/index.html:291
 msgid "See users"
 msgstr "See users"
 
-#: geonode/contrib/geosites/views.py:126 geonode/geoserver/views.py:659
-#: geonode/geoserver/views.py:715
+#: geonode/contrib/geosites/templates/master_index.html:120
+#: geonode/templates/index.html:318
+msgid "Our partners"
+msgstr ""
+
+#: geonode/contrib/geosites/views.py:124 geonode/geoserver/views.py:667
+#: geonode/geoserver/views.py:723
 msgid "Bad HTTP Authorization Credentials."
 msgstr "Bad HTTP Authorization Credentials."
 
@@ -1361,7 +1418,7 @@ msgid "GeoNode Monitoring on {} reports errors: {}"
 msgstr ""
 
 #: geonode/contrib/monitoring/frontend/index.html:40
-#: geonode/templates/base.html:132
+#: geonode/templates/base.html:202
 #, fuzzy
 #| msgid "GeoNode Help"
 msgid "GeoNode Search"
@@ -1370,7 +1427,7 @@ msgstr "GeoNode Help"
 #: geonode/contrib/monitoring/frontend/index.html:52
 #: geonode/contrib/monitoring/frontend/index.html:142
 #: geonode/contrib/monitoring/models.py:98 geonode/templates/500.html:198
-#: geonode/templates/base.html:379
+#: geonode/templates/base.html:459
 msgid "GeoNode"
 msgstr "GeoNode"
 
@@ -1380,7 +1437,7 @@ msgstr "GeoNode"
 #: geonode/people/templates/people/_profile_filters.html:5
 #: geonode/social/templates/social/activity_list.html:21
 #: geonode/templates/500.html:57 geonode/templates/500.html:153
-#: geonode/templates/base.html:159 geonode/templates/base.html:318
+#: geonode/templates/base.html:231 geonode/templates/base.html:398
 msgid "Layers"
 msgstr "Layers"
 
@@ -1389,14 +1446,14 @@ msgstr "Layers"
 #: geonode/groups/templates/groups/activity.html:28
 #: geonode/people/templates/people/_profile_filters.html:7
 #: geonode/templates/500.html:63 geonode/templates/500.html:154
-#: geonode/templates/base.html:160 geonode/templates/base.html:319
+#: geonode/templates/base.html:232 geonode/templates/base.html:399
 msgid "Documents"
 msgstr "Documents"
 
 #: geonode/contrib/monitoring/frontend/index.html:70
 #: geonode/contrib/monitoring/frontend/index.html:134
 #: geonode/templates/500.html:68 geonode/templates/500.html:181
-#: geonode/templates/base.html:189 geonode/templates/base.html:346
+#: geonode/templates/base.html:261 geonode/templates/base.html:426
 msgid "People"
 msgstr "People"
 
@@ -1404,24 +1461,24 @@ msgstr "People"
 #: geonode/contrib/monitoring/frontend/index.html:135
 #: geonode/groups/templates/groups/groupcategory_detail.html:31
 #: geonode/templates/500.html:71 geonode/templates/500.html:182
-#: geonode/templates/base.html:190 geonode/templates/base.html:347
+#: geonode/templates/base.html:262 geonode/templates/base.html:427
 msgid "Groups"
 msgstr "Groups"
 
 #: geonode/contrib/monitoring/frontend/index.html:72
-#: geonode/groups/models.py:41 geonode/templates/base.html:191
+#: geonode/groups/models.py:41 geonode/templates/base.html:263
 #, fuzzy
 #| msgid "Categories"
 msgid "Group Categories"
 msgstr "Categories"
 
 #: geonode/contrib/monitoring/frontend/index.html:93
-#: geonode/templates/500.html:114 geonode/templates/base.html:280
+#: geonode/templates/500.html:114 geonode/templates/base.html:360
 msgid "You are using an outdated browser that is not supported by GeoNode."
 msgstr ""
 
 #: geonode/contrib/monitoring/frontend/index.html:94
-#: geonode/templates/500.html:115 geonode/templates/base.html:281
+#: geonode/templates/500.html:115 geonode/templates/base.html:361
 msgid ""
 "Please use a <strong>modern browser</strong> like Mozilla Firefox, Google "
 "Chrome or Safari."
@@ -1439,42 +1496,42 @@ msgstr ""
 
 #: geonode/contrib/monitoring/frontend/index.html:142
 #: geonode/contrib/worldmap/wm_extra/templates/wm_extra/maps/mobile.html:30
-#: geonode/templates/500.html:198 geonode/templates/base.html:379
+#: geonode/templates/500.html:198 geonode/templates/base.html:459
 msgid "Powered by"
 msgstr "Powered by"
 
 #: geonode/contrib/monitoring/frontend/index.html:142
-#: geonode/templates/500.html:198 geonode/templates/base.html:379
+#: geonode/templates/500.html:198 geonode/templates/base.html:459
 msgid "version"
 msgstr "version"
 
 #: geonode/contrib/monitoring/frontend/index.html:143
-#: geonode/templates/500.html:199 geonode/templates/base.html:380
+#: geonode/templates/500.html:199 geonode/templates/base.html:460
 msgid "Developers"
 msgstr "Developers"
 
 #: geonode/contrib/monitoring/frontend/index.html:287
 #: geonode/contrib/monitoring/frontend/index.html:305
 #: geonode/templates/500.html:102 geonode/templates/500.html:229
-#: geonode/templates/500.html:247 geonode/templates/base.html:269
-#: geonode/templates/base.html:425 geonode/templates/base.html:449
+#: geonode/templates/500.html:247 geonode/templates/base.html:341
+#: geonode/templates/base.html:505 geonode/templates/base.html:529
 msgid "Sign in"
 msgstr "Sign in"
 
 #: geonode/contrib/monitoring/frontend/index.html:293
 #: geonode/templates/500.html:235 geonode/templates/500.html:236
-#: geonode/templates/base.html:437 geonode/templates/base.html:438
+#: geonode/templates/base.html:517 geonode/templates/base.html:518
 msgid "Username"
 msgstr "Username"
 
 #: geonode/contrib/monitoring/frontend/index.html:297
-#: geonode/templates/500.html:239 geonode/templates/base.html:441
-#: geonode/templates/base.html:442
+#: geonode/templates/500.html:239 geonode/templates/base.html:521
+#: geonode/templates/base.html:522
 msgid "Password"
 msgstr "Password"
 
 #: geonode/contrib/monitoring/frontend/index.html:301
-#: geonode/templates/500.html:243 geonode/templates/base.html:445
+#: geonode/templates/500.html:243 geonode/templates/base.html:525
 msgid "Remember Me"
 msgstr "Remember Me"
 
@@ -1582,17 +1639,6 @@ msgstr "About GeoNode"
 msgid "No resource"
 msgstr "Resources"
 
-#: geonode/contrib/monitoring/models.py:171
-#: geonode/documents/templates/documents/document_detail.html:150
-#: geonode/templates/index.html:279
-#: geonode/templates/pinax/notifications/request_download_resourcebase/full.txt:9
-#, fuzzy
-#| msgid "Document"
-msgid "Document"
-msgid_plural "Documents"
-msgstr[0] "Document"
-msgstr[1] "Document"
-
 #: geonode/contrib/monitoring/models.py:172
 #, fuzzy
 #| msgid "Styles"
@@ -1601,7 +1647,7 @@ msgstr "Styles"
 
 #: geonode/contrib/monitoring/models.py:173
 #: geonode/people/templates/people/profile_detail.html:161
-#: geonode/templates/500.html:278 geonode/templates/base.html:253
+#: geonode/templates/500.html:278 geonode/templates/base.html:325
 msgid "Admin"
 msgstr "Admin"
 
@@ -1765,7 +1811,7 @@ msgstr ""
 
 #: geonode/contrib/monitoring/templates/monitoring/index.html:5
 #: geonode/contrib/monitoring/templates/monitoring/non_superuser.html:4
-#: geonode/templates/base.html:259
+#: geonode/templates/base.html:331
 msgid "Monitoring"
 msgstr ""
 
@@ -2819,8 +2865,8 @@ msgid "Upload files"
 msgstr "Upload files"
 
 #: geonode/documents/templates/documents/document_upload.html:5
-#: geonode/templates/500.html:162 geonode/templates/base.html:168
-#: geonode/templates/base.html:327
+#: geonode/templates/500.html:162 geonode/templates/base.html:240
+#: geonode/templates/base.html:407
 msgid "Upload Document"
 msgstr "Upload Document"
 
@@ -2918,7 +2964,7 @@ msgstr "Change Layer Permissions"
 #: geonode/documents/templates/layouts/doc_panels.html:269
 #: geonode/layers/templates/layouts/panels.html:492
 #: geonode/maps/templates/layouts/map_panels.html:288
-#: geonode/templates/_permissions_form.html:28 geonode/templates/base.html:554
+#: geonode/templates/_permissions_form.html:28 geonode/templates/base.html:634
 #, fuzzy
 #| msgid "Message Inbox"
 msgid "Message box"
@@ -2927,7 +2973,7 @@ msgstr "Message Inbox"
 #: geonode/documents/templates/layouts/doc_panels.html:275
 #: geonode/layers/templates/layouts/panels.html:498
 #: geonode/maps/templates/layouts/map_panels.html:294
-#: geonode/templates/_permissions_form.html:34 geonode/templates/base.html:560
+#: geonode/templates/_permissions_form.html:34 geonode/templates/base.html:640
 msgid "OK"
 msgstr ""
 
@@ -2999,15 +3045,15 @@ msgstr "Rating for Layer"
 msgid "A rating was given to a layer"
 msgstr "A rating was given to a layer"
 
-#: geonode/geoserver/helpers.py:617 geonode/layers/models.py:517
+#: geonode/geoserver/helpers.py:618 geonode/layers/models.py:517
 msgid "No abstract provided"
 msgstr "No abstract provided"
 
-#: geonode/geoserver/helpers.py:1287
+#: geonode/geoserver/helpers.py:1320
 msgid "An exception occurred loading data to PostGIS"
 msgstr "An exception occurred loading data to PostGIS"
 
-#: geonode/geoserver/helpers.py:1292
+#: geonode/geoserver/helpers.py:1325
 msgid " Additionally an error occured during database cleanup"
 msgstr " Additionally an error occured during database cleanup"
 
@@ -3055,7 +3101,7 @@ msgstr "PDF"
 msgid "PNG"
 msgstr "PNG"
 
-#: geonode/geoserver/views.py:539
+#: geonode/geoserver/views.py:547
 msgid "You don't have permissions to change style for this layer"
 msgstr "You don't have permissions to change style for this layer"
 
@@ -3177,8 +3223,8 @@ msgstr "Activity Feed for"
 #: geonode/people/templates/people/_profile_filters.html:6
 #: geonode/social/templates/social/activity_list.html:22
 #: geonode/templates/500.html:60 geonode/templates/500.html:171
-#: geonode/templates/base.html:177 geonode/templates/base.html:183
-#: geonode/templates/base.html:336
+#: geonode/templates/base.html:249 geonode/templates/base.html:255
+#: geonode/templates/base.html:416
 msgid "Maps"
 msgstr "Maps"
 
@@ -3238,8 +3284,8 @@ msgstr "Remove Group"
 
 #: geonode/groups/templates/groups/group_create.html:5
 #: geonode/groups/templates/groups/group_update.html:5
-#: geonode/templates/500.html:189 geonode/templates/base.html:199
-#: geonode/templates/base.html:354
+#: geonode/templates/500.html:189 geonode/templates/base.html:271
+#: geonode/templates/base.html:434
 msgid "Create Group"
 msgstr "Create Group"
 
@@ -3421,7 +3467,7 @@ msgstr ""
 msgid "An active user is already using the e-mail address '%(email)s'"
 msgstr ""
 
-#: geonode/invitations/forms.py:75 geonode/templates/base.html:374
+#: geonode/invitations/forms.py:75 geonode/templates/base.html:454
 #, fuzzy
 #| msgid "Email"
 msgid "E-mail"
@@ -3813,8 +3859,8 @@ msgid "Images"
 msgstr ""
 
 #: geonode/layers/templates/layers/layer_detail.html:277
-#: geonode/templates/500.html:152 geonode/templates/base.html:157
-#: geonode/templates/base.html:317
+#: geonode/templates/500.html:152 geonode/templates/base.html:229
+#: geonode/templates/base.html:397
 msgid "Data"
 msgstr ""
 
@@ -4063,7 +4109,7 @@ msgid "Source"
 msgstr "Source"
 
 #: geonode/layers/templates/layers/layer_detail.html:709
-#: geonode/templates/base.html:536 geonode/templates/metadata_base.html:144
+#: geonode/templates/base.html:616 geonode/templates/metadata_base.html:144
 msgid "Processing..."
 msgstr ""
 
@@ -4357,8 +4403,8 @@ msgid "Other Settings"
 msgstr "Notice settings"
 
 #: geonode/layers/templates/upload/layer_upload.html:5
-#: geonode/templates/500.html:158 geonode/templates/base.html:164
-#: geonode/templates/base.html:323
+#: geonode/templates/500.html:158 geonode/templates/base.html:236
+#: geonode/templates/base.html:403
 msgid "Upload Layer"
 msgstr "Upload Layer"
 
@@ -5505,7 +5551,7 @@ msgid "name of the responsible organization"
 msgstr "name of the responsible organization"
 
 #: geonode/people/models.py:76 geonode/templates/500.html:265
-#: geonode/templates/base.html:248
+#: geonode/templates/base.html:320
 msgid "Profile"
 msgstr "Profile"
 
@@ -5688,7 +5734,7 @@ msgid "Not provided"
 msgstr "Not provided"
 
 #: geonode/people/templates/people/profile_detail.html:97
-#: geonode/templates/base.html:373 geonode/templates/metadata_detail.html:145
+#: geonode/templates/base.html:453 geonode/templates/metadata_detail.html:145
 #: geonode/templates/metadata_detail.html:287
 #: geonode/templates/metadata_detail.html:363
 msgid "Fax"
@@ -5750,13 +5796,13 @@ msgstr "Notifications"
 #: geonode/templates/500.html:184 geonode/templates/500.html:272
 #: geonode/templates/announcements/announcement_list.html:5
 #: geonode/templates/announcements/announcement_list.html:12
-#: geonode/templates/base.html:193 geonode/templates/base.html:349
+#: geonode/templates/base.html:265 geonode/templates/base.html:429
 msgid "Announcements"
 msgstr "Announcements"
 
 #: geonode/people/templates/people/profile_detail.html:158
 #: geonode/templates/500.html:186 geonode/templates/500.html:274
-#: geonode/templates/base.html:196 geonode/templates/base.html:351
+#: geonode/templates/base.html:268 geonode/templates/base.html:431
 #: geonode/templates/invitations/forms/_invite.html:7
 #, fuzzy
 #| msgid "Invite User"
@@ -5810,7 +5856,7 @@ msgstr "Your username has been emailed to you."
 msgid "No user could be found with that email address."
 msgstr "No user could be found with that email address."
 
-#: geonode/proxy/views.py:257
+#: geonode/proxy/views.py:268
 #, fuzzy
 #| msgid "You are not permitted to save or edit this map."
 msgid "You are not permitted to save or edit this resource."
@@ -6077,8 +6123,8 @@ msgid "Register a new Service"
 msgstr "Register a new Service"
 
 #: geonode/services/templates/services/service_list.html:9
-#: geonode/templates/500.html:155 geonode/templates/base.html:161
-#: geonode/templates/base.html:320
+#: geonode/templates/500.html:155 geonode/templates/base.html:233
+#: geonode/templates/base.html:400
 msgid "Remote Services"
 msgstr "Remote Services"
 
@@ -6317,7 +6363,7 @@ msgstr ""
 msgid "Toggle navigation"
 msgstr "Elevation"
 
-#: geonode/templates/500.html:91 geonode/templates/base.html:232
+#: geonode/templates/500.html:91 geonode/templates/base.html:304
 msgid "Register"
 msgstr "Register"
 
@@ -6343,22 +6389,22 @@ msgstr ""
 "GeoNode/geonode/issues\">GeoNode's issue tracker</a>\n"
 "            "
 
-#: geonode/templates/500.html:165 geonode/templates/base.html:171
-#: geonode/templates/base.html:330
+#: geonode/templates/500.html:165 geonode/templates/base.html:243
+#: geonode/templates/base.html:410
 #, fuzzy
 #| msgid "Remote Services"
 msgid "Add Remote Service"
 msgstr "Remote Services"
 
-#: geonode/templates/500.html:174 geonode/templates/base.html:180
-#: geonode/templates/base.html:339
+#: geonode/templates/500.html:174 geonode/templates/base.html:252
+#: geonode/templates/base.html:419
 #, fuzzy
 #| msgid "Create a Map"
 msgid "Create Map"
 msgstr "Create a Map"
 
-#: geonode/templates/500.html:188 geonode/templates/base.html:198
-#: geonode/templates/base.html:353
+#: geonode/templates/500.html:188 geonode/templates/base.html:270
+#: geonode/templates/base.html:433
 #, fuzzy
 #| msgid "Add layers"
 msgid "Add User"
@@ -6368,26 +6414,26 @@ msgstr "Add layers"
 msgid "Menu"
 msgstr "Menu"
 
-#: geonode/templates/500.html:266 geonode/templates/base.html:249
+#: geonode/templates/500.html:266 geonode/templates/base.html:321
 msgid "Recent Activity"
 msgstr "Recent Activity"
 
-#: geonode/templates/500.html:267 geonode/templates/base.html:250
+#: geonode/templates/500.html:267 geonode/templates/base.html:322
 #: geonode/templates/user_messages/inbox.html:15
 msgid "Inbox"
 msgstr "Inbox"
 
-#: geonode/templates/500.html:283 geonode/templates/base.html:263
+#: geonode/templates/500.html:283 geonode/templates/base.html:335
 msgid "Help"
 msgstr "Help"
 
 #: geonode/templates/500.html:289 geonode/templates/account/logout.html:5
 #: geonode/templates/account/logout.html:11
-#: geonode/templates/account/logout.html:16 geonode/templates/base.html:265
+#: geonode/templates/account/logout.html:16 geonode/templates/base.html:337
 msgid "Log out"
 msgstr "Log out"
 
-#: geonode/templates/500.html:324 geonode/templates/base.html:486
+#: geonode/templates/500.html:324 geonode/templates/base.html:566
 msgid "Type your search here ..."
 msgstr "Type your search here ..."
 
@@ -7128,29 +7174,29 @@ msgstr ""
 msgid "Delete These"
 msgstr "Delete These"
 
-#: geonode/templates/base.html:363
+#: geonode/templates/base.html:443
 #, fuzzy
 #| msgid "Contact:"
 msgid "Contact Us"
 msgstr "Contact:"
 
-#: geonode/templates/base.html:372
+#: geonode/templates/base.html:452
 msgid "Tel"
 msgstr ""
 
-#: geonode/templates/base.html:519
+#: geonode/templates/base.html:599
 #, fuzzy
 #| msgid "uploaded"
 msgid "Uploading..."
 msgstr "uploaded"
 
-#: geonode/templates/base.html:524
+#: geonode/templates/base.html:604
 #, fuzzy
 #| msgid "Upload files"
 msgid "Upload in progress..."
 msgstr "Upload files"
 
-#: geonode/templates/base.html:541
+#: geonode/templates/base.html:621
 #, fuzzy
 #| msgid "Thumbnail"
 msgid "Updating Thumbnail..."
@@ -7826,22 +7872,6 @@ msgstr "Welcome!"
 msgid "home"
 msgstr ""
 
-#: geonode/templates/index.html:23
-msgid "http://docs.geonode.org/en/master/tutorials/users/index.html"
-msgstr ""
-
-#: geonode/templates/index.html:23
-#, fuzzy
-#| msgid "Getting Started"
-msgid "Get Started &raquo;"
-msgstr "Getting Started"
-
-#: geonode/templates/index.html:38
-#, fuzzy
-#| msgid "Search"
-msgid "Search for Data."
-msgstr "Search"
-
 #: geonode/templates/index.html:49
 #, fuzzy
 #| msgid "GeoNode Help"
@@ -8078,57 +8108,26 @@ msgstr "User Activities"
 msgid "Featured Datasets"
 msgstr "Featured"
 
-#: geonode/templates/index.html:270
-#, fuzzy
-#| msgid ""
-#| "Data is available for browsing, aggregating and styling to generate maps "
-#| "which can be shared publicly or restricted to specific users only."
-msgid ""
-"Data is available for browsing, aggregating and styling to generate maps "
-"which can be saved, downloaded, shared publicly or restricted to specify "
-"users only."
-msgstr ""
-"Data is available for browsing, aggregating and styling to generate maps "
-"which can be shared publicly or restricted to specific users only."
-
-#: geonode/templates/index.html:280
-msgid ""
-"As for the layers and maps GeoNode allows to publish tabular and text data, "
-"manage theirs metadata and associated documents."
-msgstr ""
-
-#: geonode/templates/index.html:282
-#, fuzzy
-#| msgid "Add Comment"
-msgid "Add documents"
-msgstr "Add Comment"
-
-#: geonode/templates/index.html:284
-#, fuzzy
-#| msgid "Explore Documents"
-msgid "Explore documents"
-msgstr "Explore Documents"
-
-#: geonode/templates/index.html:290
-#, fuzzy
-#| msgid ""
-#| "GeoNode allows registered users to easily upload geospatial data in "
-#| "several formats including shapefile and GeoTiff."
-msgid ""
-"Geonode allows registered users to easily upload geospatial data and various "
-"documents in several formats."
-msgstr ""
-"GeoNode allows registered users to easily upload geospatial data in several "
-"formats including shapefile and GeoTiff."
-
 #: geonode/templates/index.html:309
 #, fuzzy
 #| msgid "Explore layers"
 msgid "Explore all datasets"
 msgstr "Explore layers"
 
-#: geonode/templates/index.html:318
-msgid "Our partners"
+#: geonode/templates/index.html:343
+#, fuzzy
+#| msgid "Accepted"
+msgid "Accept"
+msgstr "Accepted"
+
+#: geonode/templates/index.html:344
+#, fuzzy
+#| msgid "projection"
+msgid "Reject"
+msgstr "projection"
+
+#: geonode/templates/index.html:345
+msgid "Leave"
 msgstr ""
 
 #: geonode/templates/invitations/email/email_invite_message.html:2
@@ -8672,6 +8671,15 @@ msgstr ""
 msgid "A resource's download has been requested"
 msgstr "A resource's download has been requested"
 
+#: geonode/templates/privacy-cookies.html:4
+#: geonode/templates/privacy-cookies.html:8
+msgid "Privacy &#038; Cookies Policy"
+msgstr ""
+
+#: geonode/templates/privacy-cookies.html:10
+msgid "Privacy &#038; Cookies Policy."
+msgstr ""
+
 #: geonode/templates/relationships/_list_connections.html:4
 #: geonode/templates/relationships/_manage_connections.html:5
 msgid "Following"
@@ -9071,31 +9079,31 @@ msgstr ""
 msgid "No multiple rasters allowed"
 msgstr ""
 
-#: geonode/upload/utils.py:91
+#: geonode/upload/utils.py:92
 msgid ""
 "To support the time step, you must enable the OGC_SERVER DATASTORE option"
 msgstr ""
 
-#: geonode/upload/utils.py:258
+#: geonode/upload/utils.py:259
 #, python-format
 msgid "Unsupported file type: %s"
 msgstr ""
 
-#: geonode/upload/utils.py:562
+#: geonode/upload/utils.py:563
 #, python-format
 msgid "unknown item state: %s"
 msgstr ""
 
-#: geonode/upload/utils.py:570
+#: geonode/upload/utils.py:571
 #, python-format
 msgid "error during import: %s"
 msgstr ""
 
-#: geonode/upload/utils.py:717
+#: geonode/upload/utils.py:680
 msgid "Could not find any valid Time Regex for the Mosaic files."
 msgstr ""
 
-#: geonode/upload/utils.py:748 geonode/upload/utils.py:780
+#: geonode/upload/utils.py:711 geonode/upload/utils.py:743
 msgid "Unsupported DataBase for Mosaics!"
 msgstr ""
 
@@ -9106,6 +9114,33 @@ msgstr "Invalid permission level."
 #: geonode/utils.py:825
 msgid "Permission Denied"
 msgstr "Permission Denied"
+
+#~ msgid ""
+#~ "If you have any questions about the software or service, join our <a href="
+#~ "\"https://groups.google.com/d/forum/geonode-users\">mailing list</a>."
+#~ msgstr ""
+#~ "If you have any questions about the software or service, join our <a href="
+#~ "\"https://groups.google.com/d/forum/geonode-users\">mailing list</a>."
+
+#~ msgid "Need help?"
+#~ msgstr "Need help?"
+
+#~ msgid "Getting Started"
+#~ msgstr "Getting Started"
+
+#~ msgid ""
+#~ "Data is available for browsing, aggregating and styling to generate maps "
+#~ "which can be shared publicly or restricted to specific users only."
+#~ msgstr ""
+#~ "Data is available for browsing, aggregating and styling to generate maps "
+#~ "which can be shared publicly or restricted to specific users only."
+
+#~ msgid ""
+#~ "GeoNode allows registered users to easily upload geospatial data in "
+#~ "several formats including shapefile and GeoTiff."
+#~ msgstr ""
+#~ "GeoNode allows registered users to easily upload geospatial data in "
+#~ "several formats including shapefile and GeoTiff."
 
 #, fuzzy
 #~| msgid "Type"
@@ -9126,9 +9161,6 @@ msgstr "Permission Denied"
 
 #~ msgid "Sent"
 #~ msgstr "Sent"
-
-#~ msgid "Accepted"
-#~ msgstr "Accepted"
 
 #~ msgid "Declined"
 #~ msgstr "Declined"
