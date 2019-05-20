@@ -6846,7 +6846,7 @@ div#user_messages {
   /*with pos absolute messages float over content */
   /*position: absolute; */
   /*width: 500px;*/
-  /*margin-top: 80px;*/
+  margin-top: 80px;
   /*right: 300px;*/
 }
 body {

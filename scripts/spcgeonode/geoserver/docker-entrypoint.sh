@@ -129,6 +129,7 @@ sed -i -r "s|<proxyBaseUrl>.*</proxyBaseUrl>|<proxyBaseUrl>$BASEURL</proxyBaseUr
 
 echo "-----------------------------------------------------"
 echo "6. Importing SSL certificate (if using HTTPS)"
+echo "RECOVERY MODE: $RECOVERY"
 
 # If we recover from a backup geoserver data dir the keystore is allready initialized
 # GeoServer will not accept the old keystore due to mismatches
