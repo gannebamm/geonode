@@ -121,10 +121,7 @@ services:
       - rabbitmq:/var/lib/rabbitmq
 
   geoserver:
-    #build: ./docker/geoserver/ # build custom geoserver with ssl
-    #image: tisdar/geoserver:2.14x
-    image: geonode/geoserver:2.14.x
-    
+    image: geonode/geoserver:2.15.x
     restart: unless-stopped
     container_name: geoserver4${COMPOSE_PROJECT_NAME}
     stdin_open: true
@@ -160,7 +157,7 @@ services:
       - ./docker/env/production.env
 
   data-dir-conf:
-    image: geonode/geoserver_data:2.14.x
+    image: geonode/geoserver_data:2.15.x
     restart: on-failure
     container_name: gsconf4${COMPOSE_PROJECT_NAME}
     labels:
