@@ -5098,9 +5098,11 @@ a.thumbnail.active {
 .alert {
   padding: 15px;
   margin-bottom: 22px;
-  border: 1px solid transparent;
+  border: 1px solid #37464B;
   border-radius: 4px;
+  background: whitesmoke;
 }
+
 .alert h4 {
   margin-top: 0;
   color: inherit;
