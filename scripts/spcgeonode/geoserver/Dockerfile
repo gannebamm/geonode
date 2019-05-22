@@ -1,7 +1,9 @@
 FROM openjdk:8-jre-alpine
 
-ARG version=2.15.1
-ARG branch=2.15.x
+# since 2.15.x is not stable
+# and will cause h2 lockdowns
+ARG version=2.14.2
+ARG branch=2.14.x
 ARG plugins=
 
 # Install dependencies
@@ -33,6 +35,13 @@ RUN for plugin in $plugins; do \
         unzip -o geoserver-$version-$plugin-plugin.zip -d /geoserver/webapps/geoserver/WEB-INF/lib && \
         rm geoserver-$version-$plugin-plugin.zip; \
     done
+
+# later get PostgreSQL and PostGIS libs for GeoFence:
+# RUN wget https://build.geo-solutions.it/geonode/geoserver/latest/hibernate-spatial-postgis-1.1.3.1/hibernate-spatial-postgis-1.1.3.1.jar
+#RUN mv hibernate-spatial-postgis-1.1.3.1.jar /geoserver/webapps/geoserver/WEB-INF/hibernate-spatial-postgis-1.1.3.1.jar
+
+#RUN wget https://build.geo-solutions.it/geonode/geoserver/latest/postgis-jdbc-1.3.3/postgis-jdbc-1.3.3.jar
+#RUN mv postgis-jdbc-1.3.3.jar /geoserver/webapps/geoserver/WEB-INF/postgis-jdbc-1.3.3.jar
 
 # Download initial data dir
 RUN wget https://build.geo-solutions.it/geonode/geoserver/latest/data-$branch.zip --no-check-certificate

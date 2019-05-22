@@ -18,7 +18,6 @@ x-common-django:
     dockerfile: scripts/spcgeonode/django/Dockerfile
   environment:
     # editable in .env
-    - SITE_HOST_SCHEMA=${SITE_HOST_SCHEMA}
     - HTTPS_HOST=${HTTPS_HOST}
     - HTTPS_PORT=${HTTPS_PORT}
     - HTTP_HOST=${HTTP_HOST}
@@ -51,7 +50,7 @@ x-common-django:
     - DEFAULT_BACKEND_UPLOADER=geonode.importer
     - DEFAULT_BACKEND_DATASTORE=datastore
     ## --
-    - DEBUG=False
+    - DEBUG=True
     - LANGUAGE_CODE=${LANGUAGE_CODE}
     ## MAIL
     - EMAIL_USE_SSL=True
@@ -149,7 +148,7 @@ services:
       retries: 1
       start_period: 60s
     environment:
-      - RECOVERY=True
+      - RECOVERY=False
       - HTTPS_HOST=${HTTPS_HOST}
       - HTTPS_PORT=${HTTPS_PORT}
       - HTTP_HOST=${HTTP_HOST}
