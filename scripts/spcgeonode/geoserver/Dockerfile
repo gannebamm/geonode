@@ -3,6 +3,7 @@ FROM openjdk:8-jre-alpine
 ARG version=2.14.2
 ARG branch=2.14.x
 ARG plugins=
+ARG commpluginfiles=geoserver-2.14-SNAPSHOT-geopkg-plugin.zip
 
 # Install dependencies
 RUN apk add --no-cache ca-certificates openssl curl postgresql-client fontconfig ttf-ubuntu-font-family
@@ -27,11 +28,21 @@ RUN echo "Download geoserver for geonode" && \
 
 # Plugins support
 # Example:
+# for core plugins (extensions)
 #   $ docker-compose build --build-arg plugins="csw" geoserver
 RUN for plugin in $plugins; do \
         wget https://downloads.sourceforge.net/project/geoserver/GeoServer/$version/extensions/geoserver-$version-$plugin-plugin.zip && \
         unzip -o geoserver-$version-$plugin-plugin.zip -d /geoserver/webapps/geoserver/WEB-INF/lib && \
         rm geoserver-$version-$plugin-plugin.zip; \
+    done
+
+# for community plugins
+#   $ docker-compose build --build-arg commpluginfiles="geoserver-2.14-SNAPSHOT-geopkg-plugin.zip" geoserver
+RUN for commpluginfile in $commpluginfiles; do \
+        echo "Download $commpluginfile for GeoServer" && \
+        wget https://build.geoserver.org/geoserver/$version/community-latest/$commpluginfile && \
+        unzip -o $commpluginfile -d /geoserver/webapps/geoserver/WEB-INF/lib && \
+        rm $commpluginfile; \
     done
 
 # Download initial data dir
@@ -55,3 +66,6 @@ ENV GEOSERVER_DATA_DIR=/spcgeonode-geodatadir
 
 # Run geoserver
 CMD ["bin/startup.sh"]
+
+
+
