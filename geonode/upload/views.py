@@ -54,6 +54,8 @@ from django.shortcuts import render
 from django.views.generic import CreateView, DeleteView
 from geonode.utils import fixup_shp_columnnames
 from geonode.base.enumerations import CHARSETS
+from geonode.monitoring import register_event
+from geonode.monitoring.models import EventType
 
 from .forms import (
     LayerUploadForm,
@@ -92,22 +94,28 @@ def _log(msg, *args):
     logger.debug(msg, *args)
 
 
+def _get_upload_session(req):
+    upload_session = None
+    if 'id' in req.GET:
+        upload_id = str(req.GET['id'])
+        upload_obj = get_object_or_404(
+            Upload, import_id=upload_id, user=req.user)
+        upload_session = upload_obj.get_session()
+    return upload_session
+
+
 def data_upload_progress(req):
     """This would not be needed if geoserver REST did not require admin role
     and is an inefficient way of getting this information"""
-    if 'id' in req.GET:
-        upload_id = str(req.GET['id'])
-        if upload_id in req.session:
-            upload_obj = get_object_or_404(
-                Upload, import_id=upload_id, user=req.user)
-            upload_session = upload_obj.get_session()
-        else:
-            upload_session = req.session[upload_id]
+    upload_session = _get_upload_session(req)
 
-        if upload_session:
-            import_session = upload_session.import_session
+    if upload_session:
+        import_session = upload_session.import_session
+        try:
             progress = import_session.tasks[0].get_progress()
             return json_response(progress)
+        except BaseException:
+            pass
 
     return json_response({'state': 'NONE'})
 
@@ -157,12 +165,12 @@ def save_step_view(req, session):
     form = LayerUploadForm(req.POST, req.FILES)
     if form.is_valid():
         tempdir = tempfile.mkdtemp(dir=settings.FILE_UPLOAD_TEMP_DIR)
-        logger.info("valid_extensions: {}".format(form.cleaned_data["valid_extensions"]))
+        logger.debug("valid_extensions: {}".format(form.cleaned_data["valid_extensions"]))
         relevant_files = _select_relevant_files(
             form.cleaned_data["valid_extensions"],
             req.FILES.itervalues()
         )
-        logger.info("relevant_files: {}".format(relevant_files))
+        logger.debug("relevant_files: {}".format(relevant_files))
         _write_uploaded_files_to_disk(tempdir, relevant_files)
         base_file = os.path.join(tempdir, form.cleaned_data["base_file"].name)
         name, ext = os.path.splitext(os.path.basename(base_file))
@@ -174,7 +182,7 @@ def save_step_view(req, session):
             scan_hint=scan_hint,
             charset=form.cleaned_data["charset"]
         )
-        logger.info("spatial_files: {}".format(spatial_files))
+        logger.debug("spatial_files: {}".format(spatial_files))
         import_session = save_step(
             req.user,
             name,
@@ -223,9 +231,7 @@ def save_step_view(req, session):
             mosaic_time_value=form.cleaned_data['mosaic_time_value'],
             user=req.user
         )
-        req.session[str(upload_session.import_session.id)] = upload_session
-        _log('saved session : %s',
-             req.session[str(upload_session.import_session.id)])
+        Upload.objects.update_from_session(upload_session)
         return next_step_response(req, upload_session, force_ajax=True)
     else:
         errors = []
@@ -235,6 +241,8 @@ def save_step_view(req, session):
 
 
 def srs_step_view(request, upload_session):
+    if not upload_session:
+        upload_session = _get_upload_session(request)
     import_session = upload_session.import_session
     assert import_session is not None
 
@@ -308,6 +316,8 @@ def srs_step_view(request, upload_session):
 
 
 def csv_step_view(request, upload_session):
+    if not upload_session:
+        upload_session = _get_upload_session(request)
     import_session = upload_session.import_session
     assert import_session is not None
 
@@ -401,6 +411,8 @@ def csv_step_view(request, upload_session):
 
 
 def check_step_view(request, upload_session):
+    if not upload_session:
+        upload_session = _get_upload_session(request)
     import_session = upload_session.import_session
     assert import_session is not None
 
@@ -426,6 +438,8 @@ def check_step_view(request, upload_session):
 
 
 def create_time_form(request, upload_session, form_data):
+    if not upload_session:
+        upload_session = _get_upload_session(request)
     feature_type = upload_session.import_session.tasks[0].layer
 
     (has_time, layer_values) = layer_eligible_for_time_dimension(
@@ -450,6 +464,8 @@ def create_time_form(request, upload_session, form_data):
 
 
 def time_step_view(request, upload_session):
+    if not upload_session:
+        upload_session = _get_upload_session(request)
     import_session = upload_session.import_session
     assert import_session is not None
 
@@ -532,6 +548,8 @@ def time_step_view(request, upload_session):
 
 def final_step_view(req, upload_session):
     _json_response = None
+    if not upload_session:
+        upload_session = _get_upload_session(req)
     if upload_session:
         import_session = upload_session.import_session
         _log('Checking session %s validity', import_session.id)
@@ -567,12 +585,16 @@ def final_step_view(req, upload_session):
                         'success': True
                     }
                 )
+
+                register_event(req, EventType.EVENT_UPLOAD, saved_layer)
+
                 return _json_response
             except LayerNotReady:
+                force_ajax = '&force_ajax=true' if 'force_ajax' in req.GET and req.GET['force_ajax'] == 'true' else ''
                 return json_response({'status': 'pending',
                                       'success': True,
                                       'id': req.GET['id'],
-                                      'redirect_to': '/upload/final' + "?id=%s" % req.GET['id']})
+                                      'redirect_to': '/upload/final' + "?id=%s%s" % (req.GET['id'], force_ajax)})
     else:
         # url = reverse('layer_browse') + '?limit={}'.format(settings.CLIENT_RESULTS_LIMIT)
         url = "upload/layer_upload_invalid.html"
@@ -602,6 +624,9 @@ _steps = {
 @login_required
 def view(req, step):
     """Main uploader view"""
+    from django.contrib import auth
+    if not auth.get_user(req).is_authenticated():
+        return error_response(req, errors=["Not Authorized"])
     upload_session = None
     upload_id = req.GET.get('id', None)
 
@@ -614,13 +639,13 @@ def view(req, step):
                 user=req.user)
             session = upload_obj.get_session()
             if session:
-                req.session[upload_id] = session
                 return next_step_response(req, session)
         step = 'save'
 
         # delete existing session
         if upload_id and upload_id in req.session:
             del req.session[upload_id]
+            req.session.modified = True
     else:
         if not upload_id:
             return render(
@@ -635,7 +660,7 @@ def view(req, step):
             if session:
                 upload_session = session
             else:
-                upload_session = req.session[upload_id]
+                upload_session = _get_upload_session(req)
         except BaseException:
             traceback.print_exc()
     try:
@@ -661,15 +686,11 @@ def view(req, step):
                         Upload.objects.update_from_session(upload_session)
                         upload_session = None
                         del req.session[upload_id]
+                        req.session.modified = True
                 except BaseException:
                     pass
-            else:
-                try:
-                    req.session[upload_id] = upload_session
-                except BaseException:
-                    traceback.print_exc()
-        elif upload_id in req.session:
-            upload_session = req.session[upload_id]
+        else:
+            upload_session = _get_upload_session(req)
         if upload_session:
             Upload.objects.update_from_session(upload_session)
         return resp

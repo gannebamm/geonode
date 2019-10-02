@@ -25,23 +25,28 @@ from decimal import Decimal
 from itertools import chain
 
 from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist, MultipleObjectsReturned
 from django.db import models
 from django.utils.html import strip_tags
 from django.template.loader import get_template
 from django.core.mail import EmailMultiAlternatives as EmailMessage
 from django.utils.translation import ugettext_noop as _
 from django.db.models import Max
+from django.urls import resolve, Resolver404
 
 
 from geonode.utils import raw_sql
 from geonode.notifications_helper import send_notification
 from geonode.monitoring import MonitoringAppConfig as AppConf
-from geonode.monitoring.models import (Metric, MetricValue, ServiceTypeMetric,
-                                       MonitoredResource, MetricLabel, RequestEvent,
-                                       ExceptionEvent, OWSService, NotificationCheck,)
+from geonode.monitoring.models import (Metric, MetricValue, RequestEvent, MonitoredResource,
+                                       ExceptionEvent, EventType, NotificationCheck, BuiltIns)
 
 from geonode.monitoring.utils import generate_periods, align_period_start, align_period_end
+from geonode.monitoring.aggregation import (aggregate_past_periods, calculate_rate, calculate_percent,
+                                            extract_resources, extract_event_type,
+                                            extract_event_types, extract_special_event_types,
+                                            get_resources_for_metric, get_labels_for_metric,
+                                            get_metric_names)
+from geonode.base.models import ResourceBase
 from geonode.utils import parse_datetime
 
 
@@ -56,37 +61,16 @@ class CollectorAPI(object):
     def _calculate_rate(self, metric_name, metric_label,
                         current_value, valid_to):
         """
-        Find previous network metric value and caclulate rate between them
+        Find previous network metric value and calculate rate between them
         """
-        prev = MetricValue.objects.filter(service_metric__metric__name=metric_name,
-                                          label__name=metric_label,
-                                          valid_to__lt=valid_to)\
-            .order_by('-valid_to').first()
-        if not prev:
-            return
-        prev_val = prev.value_num
-        valid_to = valid_to.replace(tzinfo=pytz.utc)
-        prev.valid_to = prev.valid_to.replace(tzinfo=pytz.utc)
-        interval = valid_to - prev.valid_to
-        if not isinstance(current_value, Decimal):
-            current_value = Decimal(current_value)
-
-        # this means counter was reset, don't want rates below 0
-        if current_value < prev_val:
-            return
-        rate = float((current_value - prev_val)) / interval.total_seconds()
-        return rate
+        return calculate_rate(metric_name, metric_label, current_value, valid_to)
 
     def _calculate_percent(
             self, metric_name, metric_label, current_value, valid_to):
         """
-        Find previous network metric value and caclulate percent
+        Find previous network metric value and calculate percent
         """
-        rate = self._calculate_rate(
-            metric_name, metric_label, current_value, valid_to)
-        if rate is None:
-            return
-        return rate * 100
+        return calculate_percent(metric_name, metric_label, current_value, valid_to)
 
     def process_host_geoserver(self, service, data, valid_from, valid_to):
         """
@@ -205,7 +189,6 @@ class CollectorAPI(object):
                                       .strftime("%Y-%m-%d %H:%M:%S")).replace(tzinfo=utc)
         valid_from = align_period_start(collected_at, service.check_interval)
         valid_to = align_period_end(collected_at, service.check_interval)
-
         mdefaults = {'valid_from': valid_from,
                      'valid_to': valid_to,
                      'resource': None,
@@ -370,70 +353,32 @@ class CollectorAPI(object):
             log.debug(MetricValue.add(**mdata))
 
     def get_labels_for_metric(self, metric_name, resource=None):
-        mt = ServiceTypeMetric.objects.filter(metric__name=metric_name)
-        if not mt:
-            raise ValueError("No metric for {}".format(metric_name))
-
-        qparams = {'metric_values__service_metric__in': mt}
-        if resource:
-            qparams['metricvalue__resource'] = resource
-        return list(MetricLabel.objects.filter(
-            **qparams).distinct().values_list('id', 'name'))
+        return get_labels_for_metric(metric_name, resource)
 
     def get_resources_for_metric(self, metric_name):
-        mt = ServiceTypeMetric.objects.filter(metric__name=metric_name)
-        if not mt:
-            raise ValueError("No metric for {}".format(metric_name))
-        return list(MonitoredResource.objects.filter(metric_values__service_metric__in=mt)
-                                             .exclude(name='', type='')
-                                             .distinct()
-                                             .order_by('type', 'name')
-                                             .values_list('type', 'name'))
+        return get_resources_for_metric(metric_name)
 
     def get_metric_names(self):
         """
         Returns list of tuples: (service type, list of metrics)
         """
-        q = ServiceTypeMetric.objects.all().select_related(
-        ).order_by('service_type', 'metric')
-
-        out = []
-        current_service = None
-        current_set = []
-        for item in q:
-            service, metric = item.service_type, item.metric
-            if current_service != service:
-                if current_service is not None:
-                    out.append((current_service, current_set,))
-                    current_set = []
-                current_service = service
-            current_set.append(metric)
-        if current_set:
-            out.append((current_service, current_set,))
-
-        return out
+        return get_metric_names()
 
     def extract_resources(self, requests):
-        resources = MonitoredResource.objects.filter(
-            requests__in=requests).distinct()
-        out = []
-        for res in resources:
-            out.append((res, requests.filter(resources=res).distinct(),))
-        return out
+        return extract_resources(requests)
 
-    def extract_ows_service(self, requests):
-        q = requests.exclude(ows_service__isnull=True).distinct(
-            'ows_service').values_list('ows_service', flat=True)
-        try:
-            return q.get()
-        except (ObjectDoesNotExist, MultipleObjectsReturned,):
-            pass
+    def extract_event_type(self, requests):
+        return extract_event_type(requests)
 
-    def extract_ows_services(self, requests):
-        ows_services = requests.exclude(ows_service__isnull=True)\
-                               .distinct('ows_service')\
-                               .values_list('ows_service', flat=True)
-        return [OWSService.objects.get(id=ows_id) for ows_id in ows_services]
+    def extract_event_types(self, requests):
+        return extract_event_types(requests)
+
+    def extract_special_event_types(self, requests):
+        """
+        Return list of pairs (event_type, requests)
+        that should be registered as one of aggregating event types: ows:all, other,
+        """
+        return extract_special_event_types(requests)
 
     def set_metric_values(self, metric_name, column_name,
                           requests, service, **metric_values):
@@ -450,41 +395,54 @@ class CollectorAPI(object):
         if metric.is_rate:
             row = requests.aggregate(value=models.Avg(column_name))
             row['samples'] = requests.count()
-            row['label'] = 'rate'
+            row['label'] = Metric.TYPE_RATE
             q = [row]
+
         elif metric.is_count:
             q = []
             values = requests.distinct(
                 column_name).values_list(column_name, flat=True)
             for v in values:
-                row = requests.filter(**{column_name: v})\
-                    .aggregate(value=models.Sum(column_name),
-                               samples=models.Count(column_name))
+                rqs = requests.filter(**{column_name: v})
+                row = rqs.aggregate(
+                    value=models.Sum(column_name),
+                    samples=models.Count(column_name)
+                )
                 row['label'] = v
                 q.append(row)
-
             q.sort(key=_key)
             q.reverse()
 
         elif metric.is_value:
-
             q = []
-            values = requests.distinct(
-                column_name).values_list(column_name, flat=True)
+            is_user_metric = column_name == "user_identifier"
+            if is_user_metric:
+                values = requests.distinct(
+                    column_name).values_list(column_name, "user_username")
+            else:
+                values = requests.distinct(
+                    column_name).values_list(column_name, flat=True)
             for v in values:
-                row = requests.filter(**{column_name: v})\
-                    .aggregate(value=models.Count(column_name),
-                               samples=models.Count(column_name))
+                value = v
+                if is_user_metric:
+                    value = v[0]
+                rqs = requests.filter(**{column_name: value})
+                row = rqs.aggregate(
+                    value=models.Count(column_name),
+                    samples=models.Count(column_name)
+                )
                 row['label'] = v
                 q.append(row)
             q.sort(key=_key)
             q.reverse()
+
         elif metric.is_value_numeric:
             q = []
             row = requests.aggregate(value=models.Max(column_name),
                                      samples=models.Count(column_name))
-            row['label'] = v
+            row['label'] = Metric.TYPE_VALUE_NUMERIC
             q.append(row)
+
         else:
             raise ValueError("Unsupported metric type: {}".format(metric.type))
         rows = q[:100]
@@ -523,19 +481,18 @@ class CollectorAPI(object):
             self.process_requests_batch(service, requests_batch, pstart, pend)
 
     def set_error_values(self, requests, valid_from, valid_to,
-                         service=None, resource=None, ows_service=None):
-        with_errors = requests.filter(exceptions__isnull=False)
+                         service=None, resource=None, event_type=None):
+        with_errors = requests.exclude(exceptions=None)
         if not with_errors.exists():
             return
 
         labels = ExceptionEvent.objects.filter(request__in=with_errors)\
                                        .distinct()\
                                        .values_list('error_type', flat=True)
-
         defaults = {'valid_from': valid_from,
                     'valid_to': valid_to,
                     'resource': resource,
-                    'ows_service': ows_service,
+                    'event_type': event_type,
                     'metric': 'response.error.count',
                     'samples_count': requests.count(),
                     'label': 'count',
@@ -556,13 +513,14 @@ class CollectorAPI(object):
         """
         Processes requests information into metric values
         """
-        log.info("Processing batch of %s requests from %s to %s",
-                 requests.count(), valid_from, valid_to)
+        log.debug("Processing batch of %s requests from %s to %s", requests.count(), valid_from, valid_to)
         if not requests.count():
             return
+        event_all = EventType.objects.get(name=EventType.EVENT_ALL)
         metric_defaults = {'valid_from': valid_from,
                            'valid_to': valid_to,
-                           'requests': requests,
+                           'event_type': event_all,
+                           'resource': None,
                            'service': service}
         MetricValue.objects.filter(
             valid_from__gte=valid_from,
@@ -570,215 +528,73 @@ class CollectorAPI(object):
             service=service).delete()
         requests = requests.filter(service=service)
         resources = self.extract_resources(requests)
-        count = requests.count()
-        paths = requests.distinct('request_path').values_list(
-            'request_path', flat=True)
-        log.debug(MetricValue.add('request.count', valid_from, valid_to, service, 'Count',
-                                  value=count,
-                                  value_num=count,
-                                  value_raw=count,
-                                  samples_count=count,
-                                  resource=None))
-        for path in paths:
-            count = requests.filter(request_path=path).count()
-            log.debug(MetricValue.add('request.path', valid_from, valid_to, service, path,
-                                      value=count,
-                                      value_num=count,
-                                      value_raw=count,
-                                      samples_count=count,
-                                      resource=None))
 
-        # calculate overall stats
-        self.set_metric_values('request.ip', 'client_ip', **metric_defaults)
-        self.set_metric_values(
-            'request.country',
-            'client_country',
-            **metric_defaults)
-        self.set_metric_values(
-            'request.city',
-            'client_city',
-            **metric_defaults)
-        self.set_metric_values(
-            'request.region',
-            'client_region',
-            **metric_defaults)
-        self.set_metric_values('request.ua', 'user_agent', **metric_defaults)
-        self.set_metric_values(
-            'request.ua.family',
-            'user_agent_family',
-            **metric_defaults)
-        self.set_metric_values(
-            'response.time',
-            'response_time',
-            **metric_defaults)
-        self.set_metric_values(
-            'response.size',
-            'response_size',
-            **metric_defaults)
-        self.set_metric_values(
-            'response.status',
-            'response_status',
-            **metric_defaults)
-        self.set_metric_values(
-            'request.method',
-            'request_method',
-            **metric_defaults)
-        self.set_error_values(
-            requests,
-            valid_from,
-            valid_to,
-            service=service,
-            resource=None)
+        def push_metric_values(srequests, **mdefaults):
 
-        ows_all = OWSService.objects.get(name=OWSService.OWS_ALL)
-        # for each resource we should calculate another set of stats
-        for resource, _requests in [(None, requests,)] + resources:
-            count = _requests.count()
-            ows_services = self.extract_ows_services(_requests)
-            metric_defaults['resource'] = resource
-            metric_defaults['requests'] = _requests
-            metric_defaults['ows_service'] = None
+            count = srequests.count()
+            count_mdefaults = mdefaults.copy()
+            count_mdefaults['value'] = count
+            count_mdefaults['label'] = 'Count'
+            count_mdefaults['value_num'] = count
+            count_mdefaults['value_raw'] = count
+            count_mdefaults['samples_count'] = count
 
-            MetricValue.add('request.count', valid_from, valid_to, service, 'Count', value=count, value_num=count,
-                            samples_count=count, value_raw=count, resource=resource)
-            self.set_metric_values(
-                'request.ip', 'client_ip', **metric_defaults)
-            self.set_metric_values(
-                'request.country',
-                'client_country',
-                **metric_defaults)
-            self.set_metric_values(
-                'request.city',
-                'client_city',
-                **metric_defaults)
-            self.set_metric_values(
-                'request.region',
-                'client_region',
-                **metric_defaults)
-            self.set_metric_values(
-                'request.ua', 'user_agent', **metric_defaults)
-            self.set_metric_values(
-                'request.ua.family',
-                'user_agent_family',
-                **metric_defaults)
-            self.set_metric_values(
-                'response.time',
-                'response_time',
-                **metric_defaults)
-            self.set_metric_values(
-                'response.size',
-                'response_size',
-                **metric_defaults)
-            self.set_metric_values(
-                'response.status',
-                'response_status',
-                **metric_defaults)
-            self.set_metric_values(
-                'request.method',
-                'request_method',
-                **metric_defaults)
+            log.debug(MetricValue.add('request.count', **count_mdefaults))
+
+            paths = srequests.distinct('request_path') \
+                .values_list('request_path', flat=True)
+            for path in paths:
+                count = srequests.filter(request_path=path).count()
+                count_mdefaults['value'] = count
+                count_mdefaults['label'] = path
+                count_mdefaults['value_num'] = count
+                count_mdefaults['value_raw'] = count
+                count_mdefaults['samples_count'] = count
+
+                log.debug(MetricValue.add('request.path', **count_mdefaults))
+
+            for mname, cname in (('request.ip', 'client_ip',),
+                                 ('request.users', 'user_identifier',),
+                                 ('request.country', 'client_country'),
+                                 ('request.city', 'client_city',),
+                                 ('request.region', 'client_region'),
+                                 ('request.ua', 'user_agent',),
+                                 ('request.ua.family', 'user_agent_family',),
+                                 ('response.time', 'response_time',),
+                                 ('response.size', 'response_size',),
+                                 ('response.status', 'response_status',),
+                                 ('request.method', 'request_method',),
+                                 ):
+                # calculate overall stats
+                self.set_metric_values(mname, cname, srequests, **mdefaults)
+
             self.set_error_values(
-                _requests,
+                srequests,
                 valid_from,
                 valid_to,
                 service=service,
-                resource=resource)
+                resource=None)
 
-            # ows_services may be subset of all requests in a batch, so we do
-            # calculation separately
-            if ows_services:
-                ows_requests = _requests.filter(ows_service__isnull=False)
-                count = ows_requests.count()
-                metric_defaults['requests'] = ows_requests
-                metric_defaults['ows_service'] = ows_all
+        push_metric_values(requests, **metric_defaults)
 
-                log.debug(MetricValue.add('request.count', valid_from,
-                                          valid_to, service, 'Count',
-                                          value=count, value_num=count,
-                                          samples_count=count,
-                                          value_raw=count,
-                                          resource=resource,
-                                          ows_service=ows_all))
-                self.set_metric_values(
-                    'request.ip', 'client_ip', **metric_defaults)
-                self.set_metric_values(
-                    'request.country',
-                    'client_country',
-                    **metric_defaults)
-                self.set_metric_values(
-                    'request.city', 'client_city', **metric_defaults)
-                self.set_metric_values(
-                    'request.region',
-                    'client_region',
-                    **metric_defaults)
-                self.set_metric_values(
-                    'request.ua', 'user_agent', **metric_defaults)
-                self.set_metric_values(
-                    'request.ua.family',
-                    'user_agent_family',
-                    **metric_defaults)
-                self.set_metric_values(
-                    'response.time', 'response_time', **metric_defaults)
-                self.set_metric_values(
-                    'response.size', 'response_size', **metric_defaults)
-                self.set_metric_values(
-                    'response.status',
-                    'response_status',
-                    **metric_defaults)
-                self.set_metric_values(
-                    'request.method',
-                    'request_method',
-                    **metric_defaults)
-                for ows_service in ows_services:
-                    ows_requests = _requests.filter(ows_service=ows_service)
+        # for each resource we should calculate another set of stats
+        for resource, _requests in [(None, requests,)] + resources:
 
-                    paths = ows_requests.distinct(
-                        'request_path').values_list('request_path', flat=True)
-                    for path in paths:
-                        count = ows_requests.filter(request_path=path).count()
-                        log.debug(MetricValue.add('request.path', valid_from, valid_to, service, path,
-                                                  value=count,
-                                                  value_num=count,
-                                                  value_raw=count,
-                                                  samples_count=count,
-                                                  resource=resource))
+            metric_defaults['resource'] = resource
+            metric_defaults['event_type'] = event_all
+            push_metric_values(_requests, **metric_defaults)
 
-                    count = ows_requests.count()
-                    metric_defaults['ows_service'] = ows_service
-                    metric_defaults['requests'] = ows_requests
-                    log.debug(MetricValue.add('request.count', valid_from, valid_to, service, 'Count',
-                                              value=count,
-                                              value_num=count,
-                                              samples_count=count,
-                                              value_raw=count,
-                                              resource=resource,
-                                              ows_service=ows_service))
-                    self.set_metric_values(
-                        'request.ip', 'client_ip', **metric_defaults)
-                    self.set_metric_values(
-                        'request.country', 'client_country', **metric_defaults)
-                    self.set_metric_values(
-                        'request.city', 'client_city', **metric_defaults)
-                    self.set_metric_values(
-                        'request.region', 'client_region', **metric_defaults)
-                    self.set_metric_values(
-                        'request.ua', 'user_agent', **metric_defaults)
-                    self.set_metric_values(
-                        'request.ua.family',
-                        'user_agent_family',
-                        **metric_defaults)
-                    self.set_metric_values(
-                        'response.time', 'response_time', **metric_defaults)
-                    self.set_metric_values(
-                        'response.size', 'response_size', **metric_defaults)
-                    self.set_metric_values(
-                        'response.status', 'response_status', **metric_defaults)
-                    self.set_metric_values(
-                        'request.method', 'request_method', **metric_defaults)
-                    self.set_error_values(ows_requests, valid_from, valid_to,
-                                          service=service,
-                                          resource=resource,
-                                          ows_service=ows_service)
+            # for each event type we need separate metrics set
+            event_types = self.extract_event_types(_requests)
+            for event_type in event_types:
+                event_type_requests = _requests.filter(event_type=event_type)
+                metric_defaults['event_type'] = event_type
+                push_metric_values(event_type_requests, **metric_defaults)
+
+            # combined event types: ows and non-ows
+            for evt, rq in self.extract_special_event_types(_requests):
+                metric_defaults['event_type'] = evt
+                push_metric_values(rq, **metric_defaults)
 
     def get_metrics_for(self, metric_name,
                         valid_from=None,
@@ -786,8 +602,9 @@ class CollectorAPI(object):
                         interval=None,
                         service=None,
                         label=None,
+                        user=None,
                         resource=None,
-                        ows_service=None,
+                        event_type=None,
                         service_type=None,
                         group_by=None,
                         resource_type=None):
@@ -813,8 +630,8 @@ class CollectorAPI(object):
             interval = timedelta(seconds=interval)
         metric = Metric.objects.get(name=metric_name)
         out = {'metric': metric.name,
-               'input_valid_from': valid_from,
-               'input_valid_to': valid_to,
+               'input_valid_from': valid_from.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+               'input_valid_to': valid_to.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
                'interval': interval.total_seconds(),
                'label': label.name if label else None,
                'type': metric.type,
@@ -826,13 +643,17 @@ class CollectorAPI(object):
                                           interval=interval,
                                           service=service,
                                           label=label,
-                                          ows_service=ows_service,
+                                          user=user,
+                                          event_type=event_type,
                                           service_type=service_type,
                                           resource=resource,
                                           resource_type=resource_type,
                                           group_by=group_by)
-            out['data'].append(
-                {'valid_from': pstart, 'valid_to': pend, 'data': pdata})
+            out['data'].append({
+                'valid_from': pstart.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+                'valid_to': pend.strftime('%Y-%m-%dT%H:%M:%S.%fZ'),
+                'data': pdata
+            })
         return out
 
     def get_aggregate_function(self, column_name, metric_name, service=None):
@@ -853,21 +674,146 @@ class CollectorAPI(object):
                          interval,
                          service=None,
                          label=None,
+                         user=None,
                          resource=None,
                          resource_type=None,
-                         ows_service=None,
+                         event_type=None,
                          service_type=None,
                          group_by=None):
         """
         Returns metric values for metric within given time span
         """
+        utc = pytz.utc
         params = {}
-        group_by_map = {'resource': {'select': ['mr.id', 'mr.type', 'mr.name', ],
+        col = 'mv.value_num'
+        agg_f = self.get_aggregate_function(col, metric_name, service)
+        has_agg = agg_f != col
+        group_by_map = {'resource': {'select': ['mr.id', 'mr.type', 'mr.name', 'mr.resource_id'],
                                      'from': ['join monitoring_monitoredresource mr on (mv.resource_id = mr.id)'],
                                      'where': ['and mv.resource_id is not NULL'],
-                                     'order_by': ['val desc'],
-                                     'grouper': ['resource', 'name', 'type', 'id', ],
-                                     }
+                                     'order_by': None,
+                                     'grouper': ['resource', 'name', 'type', 'id', 'resource_id'],
+                                     },
+                        # for each resource get the number of unique labels
+                        'resource_on_label': {'select_only': ['mr.id', 'mr.type', 'mr.name', 'mr.resource_id',
+                                                              'count(distinct(ml.name)) as val',
+                                                              'count(1) as metric_count',
+                                                              'sum(samples_count) as samples_count',
+                                                              'sum(mv.value_num), min(mv.value_num)',
+                                                              'max(mv.value_num)', ],
+                                              'from': [('join monitoring_monitoredresource mr '
+                                                        'on (mv.resource_id = mr.id)')],
+                                              'where': ['and mv.resource_id is not NULL'],
+                                              'order_by': ['val desc'],
+                                              'group_by': ['mr.id', 'mr.type', 'mr.name'],
+                                              'grouper': ['resource', 'name', 'type', 'id', 'resource_id'],
+                                              },
+                        # for each resource get the number of unique users
+                        'resource_on_user': {'select_only': ['mr.id', 'mr.type', 'mr.name', 'mr.resource_id',
+                                                             'count(distinct(ml.user)) as val',
+                                                             'count(1) as metric_count',
+                                                             'sum(samples_count) as samples_count',
+                                                             'sum(mv.value_num), min(mv.value_num)',
+                                                             'max(mv.value_num)', ],
+                                             'from': [('join monitoring_monitoredresource mr '
+                                                       'on (mv.resource_id = mr.id)')],
+                                             'where': ['and mv.resource_id is not NULL'],
+                                             'order_by': ['val desc'],
+                                             'group_by': ['mr.id', 'mr.type', 'mr.name'],
+                                             'grouper': ['resource', 'name', 'type', 'id', 'resource_id'],
+                                             },
+                        # resource count
+                        'count_on_resource': {'select_only': [('count(distinct(mr.id)) as val, '
+                                                               'count(1) as metric_count, '
+                                                               'sum(samples_count) as samples_count, '
+                                                               'sum(mv.value_num), min(mv.value_num), '
+                                                               'max(mv.value_num)')],
+                                              'from': [('join monitoring_monitoredresource mr '
+                                                        'on (mv.resource_id = mr.id)')],
+                                              'where': ['and mr.id is not NULL'],
+                                              'order_by': ['val desc'],
+                                              'group_by': [],
+                                              'grouper': [],
+                                              },
+                        'event_type': {'select_only': ['ev.name as event_type', 'sum(mv.value_num) as val',
+                                                       'count(1) as metric_count',
+                                                       'sum(samples_count) as samples_count',
+                                                       'sum(mv.value_num), min(mv.value_num)',
+                                                       'max(mv.value_num)', ],
+                                       'from': ['join monitoring_eventtype ev on (ev.id = mv.event_type_id)',
+                                                ('join monitoring_monitoredresource mr '
+                                                 'on (mv.resource_id = mr.id)')],
+                                       'where': [],
+                                       'order_by': ['val desc'],
+                                       'group_by': ['ev.name'],
+                                       'grouper': [],
+                                       },
+                        # for each event the unique label count
+                        'event_type_on_label': {'select_only': ['ev.name as event_type',
+                                                                'count(distinct(ml.name)) as val',
+                                                                'count(1) as metric_count',
+                                                                'sum(samples_count) as samples_count',
+                                                                'sum(mv.value_num), min(mv.value_num)',
+                                                                'max(mv.value_num)', ],
+                                                'from': ['join monitoring_eventtype ev on (ev.id = mv.event_type_id)',
+                                                         ('join monitoring_monitoredresource mr '
+                                                          'on (mv.resource_id = mr.id)')],
+                                                'where': [],
+                                                'order_by': ['val desc'],
+                                                'group_by': ['ev.name'],
+                                                'grouper': [],
+                                                },
+                        # for each event the unique user count
+                        'event_type_on_user': {'select_only': ['ev.name as event_type',
+                                                               'count(distinct(ml.user)) as val',
+                                                               'count(1) as metric_count',
+                                                               'sum(samples_count) as samples_count',
+                                                               'sum(mv.value_num), min(mv.value_num)',
+                                                               'max(mv.value_num)', ],
+                                               'from': ['join monitoring_eventtype ev on (ev.id = mv.event_type_id)',
+                                                        ('join monitoring_monitoredresource mr '
+                                                         'on (mv.resource_id = mr.id)')],
+                                               'where': [],
+                                               'order_by': ['val desc'],
+                                               'group_by': ['ev.name'],
+                                               'grouper': [],
+                                               },
+                        # group by user: number of unique user
+                        'user': {'select_only': [('count(distinct(ml.user)) as val, '
+                                                  'count(1) as metric_count, sum(samples_count) as samples_count, '
+                                                  'sum(mv.value_num), min(mv.value_num), max(mv.value_num)')],
+                                 'from': [('join monitoring_monitoredresource mr '
+                                           'on (mv.resource_id = mr.id)')],
+                                 # 'from': [], do we want to retrieve also events not related to a monitored resource?
+                                 'where': ['and ml.user is not NULL'],
+                                 'order_by': ['val desc'],
+                                 'group_by': [],
+                                 'grouper': [],
+                                 },
+                        # number of labels for each user
+                        'user_on_label': {'select_only': ['ml.user as user, count(distinct(ml.name)) as val, '
+                                                          'count(1) as metric_count',
+                                                          'sum(samples_count) as samples_count',
+                                                          'sum(mv.value_num), min(mv.value_num)',
+                                                          'max(mv.value_num)', ],
+                                          'from': [('join monitoring_monitoredresource mr '
+                                                    'on (mv.resource_id = mr.id)')],
+                                          'where': ['and ml.user is not NULL'],
+                                          'order_by': ['val desc'],
+                                          'group_by': ['ml.user'],
+                                          'grouper': [],
+                                          },
+                        # group by label
+                        'label': {'select_only': [('count(distinct(ml.name)) as val, '
+                                                   'count(1) as metric_count, sum(samples_count) as samples_count, '
+                                                   'sum(mv.value_num), min(mv.value_num), max(mv.value_num)')],
+                                  'from': [('join monitoring_monitoredresource mr '
+                                            'on (mv.resource_id = mr.id)')],
+                                  'where': [],  # ["and mv.resource_id is NULL or (mr.type = '')"],
+                                  'order_by': ['val desc'],
+                                  'group_by': [],
+                                  'grouper': [],
+                                  },
                         }
 
         q_from = ['from monitoring_metricvalue mv',
@@ -879,14 +825,14 @@ class CollectorAPI(object):
                    "or (mv.valid_from > TIMESTAMP %(valid_from)s AT TIME ZONE 'UTC' ",
                    "and mv.valid_to <= TIMESTAMP %(valid_to)s AT TIME ZONE 'UTC')) ",
                    'and m.name = %(metric_name)s']
+        if metric_name == 'uptime':
+            q_where = ['where', 'm.name = %(metric_name)s']
         q_group = ['ml.name']
-        params.update({'metric_name': metric_name,
-                       'valid_from': valid_from.strftime('%Y-%m-%d %H:%M:%S'),
-                       'valid_to': valid_to.strftime('%Y-%m-%d %H:%M:%S')})
 
-        col = 'mv.value_num'
-        agg_f = self.get_aggregate_function(col, metric_name, service)
-        has_agg = agg_f != col
+        params.update({'metric_name': metric_name,
+                       'valid_from': valid_from.replace(tzinfo=utc).isoformat(),
+                       'valid_to': valid_to.replace(tzinfo=utc).isoformat()})
+
         q_order_by = ['val desc']
 
         q_select = [('select ml.name as label, {} as val, '
@@ -903,47 +849,73 @@ class CollectorAPI(object):
                           '(ms.id = mv.service_id and ms.service_type_id = %(service_type_id)s ) ')
             params['service_type_id'] = service_type.id
 
-        if ows_service:
-            q_where.append(' and mv.ows_service_id = %(ows_service)s ')
-            params['ows_service'] = ows_service.id
-        else:
-            q_where.append(' and mv.ows_service_id is null ')
+        if event_type is None and group_by not in (
+                'event_type',
+                'event_type_on_label',
+                'event_type_on_user'):
+            event_type = EventType.get(EventType.EVENT_ALL)
+
+        exclude_ev_type = BuiltIns.host_metrics + ('response.error.count',)
+
+        if event_type and metric_name not in exclude_ev_type:
+            q_where.append(' and mv.event_type_id = %(event_type)s ')
+            params['event_type'] = event_type.id
 
         if label:
             q_where.append(' and ml.id = %(label)s')
             params['label'] = label.id
+        # if not group_by and not resource:
+        #     resource = MonitoredResource.get('', '', or_create=True)
 
-        if resource:
-            q_from.append('join monitoring_monitoredresource mr on '
-                          '(mv.resource_id = mr.id and mr.id = %(resource_id)s) ')
-            params['resource_id'] = resource.id
-        elif group_by != 'resource':
-            q_from.append('left join monitoring_monitoredresource mr on '
-                          '(mv.resource_id = mr.id and mr.type = %(resource_type)s and mr.name = %(resource_name)s ) ')
-            params['resource_type'] = ''
-            params['resource_name'] = ''
+        if resource and has_agg:
+            q_group.append('mr.name')
+            # group returned columns into a dict
+            # config in grouping map: target_column = {source_column1: val, ...}
 
         if label and has_agg:
             q_group.extend(['ml.name'])
-        if resource and q_group == 'resource':
-            raise ValueError(
-                "Cannot use resource and group by resource at the same time")
-        if resource and has_agg:
-            q_group.append('mr.name')
-        # group returned columns into a dict
-        # config in grouping map: target_column = {source_column1: val, ...}
+
         grouper = None
         if group_by:
             group_by_cfg = group_by_map[group_by]
-            g_sel = group_by_cfg['select']
-            q_select.append(', {}'.format(', '.join(g_sel)))
+            g_sel = group_by_cfg.get('select')
+            if g_sel:
+                q_select.append(', {}'.format(', '.join(g_sel)))
+
+            g_sel = group_by_cfg.get('select_only')
+            if g_sel:
+                q_select = ['select {}'.format(', '.join(g_sel))]
+
             q_from.extend(group_by_cfg['from'])
             q_where.extend(group_by_cfg['where'])
-            q_group.extend(group_by_cfg['select'])
+            if group_by_cfg.get('group_by') is not None:
+                q_group = group_by_cfg['group_by']
+            else:
+                q_group.extend(group_by_cfg['select'])
             grouper = group_by_cfg['grouper']
-            if resource_type:
-                q_where.append(' and mr.type = %(resource_type)s ')
-                params['resource_type'] = resource_type
+
+        if resource_type and not resource:
+            if not [mr for mr in q_from if 'monitoring_monitoredresource' in mr]:
+                q_from.append('join monitoring_monitoredresource mr on mv.resource_id = mr.id ')
+            q_where.append(' and mr.type = %(resource_type)s ')
+            params['resource_type'] = resource_type
+
+        if resource and group_by in ('resource', 'resource_on_label', 'resource_on_user', ):
+            raise ValueError(
+                "Cannot use resource and group by resource at the same time")
+        elif resource:
+            if not [mr for mr in q_from if 'monitoring_monitoredresource' in mr]:
+                q_from.append('join monitoring_monitoredresource mr on mv.resource_id = mr.id ')
+            q_where.append(' and mr.id = %(resource_id)s ')
+            params['resource_id'] = resource.id
+
+        if 'ml.name' in q_group:
+            q_select.append(', max(ml.user) as user')
+            # q_group.extend(['ml.user']) not needed
+
+        if user:
+            q_where.append(' and ml.user = %(user)s ')
+            params['user'] = user
 
         if q_group:
             q_group = [' group by ', ','.join(q_group)]
@@ -957,10 +929,34 @@ class CollectorAPI(object):
                 t = {}
                 tcol = grouper[0]
                 for scol in grouper[1:]:
-                    t[scol] = row.pop(scol)
+                    if scol == 'resource_id':
+                        if scol in row:
+                            r_id = row.pop(scol)
+                            if 'type' in t and t['type'] != MonitoredResource.TYPE_URL:
+                                try:
+                                    rb = ResourceBase.objects.get(id=r_id)
+                                    t['href'] = rb.detail_url
+                                except BaseException:
+                                    t['href'] = ""
+                    else:
+                        t[scol] = row.pop(scol)
+                        if scol == 'type' and scol in t and t[scol] == MonitoredResource.TYPE_URL:
+                            try:
+                                resolve(t['name'])
+                                t['href'] = t['name']
+                            except Resolver404:
+                                t['href'] = ""
                 row[tcol] = t
             return row
+
         return [postproc(row) for row in raw_sql(q, params)]
+
+    def aggregate_past_periods(self, metric_data_q=None, periods=None, **kwargs):
+        """
+        Aggregate past metric data into longer periods
+
+        """
+        return aggregate_past_periods(metric_data_q, periods, **kwargs)
 
     def clear_old_data(self):
         utc = pytz.utc

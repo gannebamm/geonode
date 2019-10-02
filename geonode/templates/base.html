@@ -203,6 +203,7 @@
 
     <script>
         var siteUrl = '{{ SITEURL }}'.replace(/\/?$/, '/');
+        var staticUrl = '{% static '' %}';
     </script>
 
   </head>
@@ -331,7 +332,7 @@
                     {% endif %}
                     {% if USE_MONITORING %}
                     <li role="separator" class="divider"></li>
-                    <li><a href="{% url "monitoring:index" %}">{% trans "Monitoring" %}</a></li>
+                    <li><a href="{% url "monitoring:index" %}">{% trans "Monitoring & Analytics" %}</a></li>
                     {% endif %}
                 {% endif %}
                 <li role="separator" class="divider"></li>
@@ -516,11 +517,14 @@
               </div>
               <div class="form-group">
                 <label for="id_password" class="sr-only">{% trans "Password" %}:</label>
-                <input id="id_password" class="form-control" name="password" placeholder="{% trans "Password" %}" type="password" />
+                <input id="id_password" class="form-control" name="password" placeholder="{% trans "Password" %}" type="password" autocomplete="off" />
               </div>
               <label class="checkbox">
                 <input type="checkbox" /> {% trans "Remember Me" %}
               </label>
+              <p>
+                <a href="{% url 'account_reset_password' %}">{% trans "Forgot Password?" %}</a>
+              </p>
             </div>
             <div class="modal-footer">
               <button type="submit" class="btn btn-primary btn-block">{% trans "Sign in" %}</button>
@@ -537,7 +541,6 @@
     <script src="{% static "lib/js/jquery.dataTables.js" %}?v={{ VERSION }}"></script>
     <script src="{% static "lib/js/jquery.timeago.js" %}?v={{ VERSION }}"></script>
     <script src="{% static "lib/js/jquery.ajaxprogress.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/jquery.ajaxQueue.js" %}?v={{ VERSION }}"></script>
     <script src="{% static "lib/js/jquery-ui.custom.js" %}?v={{ VERSION }}"></script>
     <script src="{% static "lib/js/jquery.raty.js" %}?v={{ VERSION }}"></script>
     <script src="{% static "lib/js/bootstrap.min.js" %}?v={{ VERSION }}"></script>
@@ -569,6 +572,9 @@
                 $('#search_input').val($(choice[0]).text());
                 $('#search').submit();
             }
+        });
+        $(".datepicker").datepicker({
+            format: "yyyy-mm-dd"
         });
     </script>
     <script>

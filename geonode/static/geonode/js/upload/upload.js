@@ -20,6 +20,7 @@ define(['underscore',
         types,
         buildFileInfo,
         displayFiles,
+        doUpload,
         doUploads,
         doSrs,
         doDelete,
@@ -192,9 +193,10 @@ define(['underscore',
         var target = event.target || event.srcElement;
         var id = target.id.split("-")[1];
         var target = siteUrl + "upload/delete/" + id;
-        $.ajaxQueue({
+        $.ajax({
             url: target,
             async: false,
+            mode: "queue",
             contentType: false,
         }).done(function (resp) {
             var div = "#incomplete-" + id;
@@ -213,9 +215,10 @@ define(['underscore',
         var target = event.target || event.srcElement;
         var id = target.id.split("-")[1];
         var target = siteUrl + "upload/?id=" + id;
-        $.ajaxQueue({
+        $.ajax({
             url: target,
             async: false,
+            mode: "queue",
             contentType: false,
         }).done(function (data) {
           if('redirect_to' in data) {
@@ -241,8 +244,9 @@ define(['underscore',
 
     doSrs = function (event) {
         var form = $("#srsForm")
-        $.ajaxQueue({
+        $.ajax({
            type: "POST",
+           mode: "queue",
            url: siteUrl + 'upload/srs',
            data: form.serialize(), // serializes the form's elements.
            success: function(data)
@@ -269,6 +273,13 @@ define(['underscore',
         return false;
     };
 
+    /** Function to Upload the selected files to the server
+     */
+    doUpload = function (layers) {
+        if (layers.length > 0) {
+            layers[0].uploadFiles(doUpload, layers.slice(1, layers.length));
+        }
+    };
 
     /** Function to Upload the selected files to the server
      *
@@ -284,13 +295,18 @@ define(['underscore',
         if ($.isEmptyObject(layers) || !checked) {
             alert(gettext('You are trying to upload an incomplete set of files or not all mandatory options have been validated.\n\nPlease check for errors in the form!'));
         } else {
-            $.each(layers, function (name, layerinfo) {
+            /* $.each(layers, function (name, layerinfo) {
                 layerinfo.uploadFiles();
+            }); */
+
+            var layerInfos = [];
+            $.each(layers, function (name, layerinfo) {
+                layerInfos.push(layerinfo);
             });
+            doUpload(layerInfos);
         }
         return false;
     };
-
 
     /** Initialization function. Called from main.js
      *

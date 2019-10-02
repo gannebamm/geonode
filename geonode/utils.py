@@ -17,27 +17,27 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 #########################################################################
+import os
+import gc
+import re
 import six
 import ast
-import base64
 import copy
-import datetime
-import logging
-import os
-import re
-import subprocess
-import select
-import tempfile
-import tarfile
 import time
+import base64
+import logging
+import select
 import shutil
 import string
-import requests
-import urlparse
 import urllib
-import gc
+import tarfile
 import weakref
+import datetime
+import requests
+import tempfile
+import urlparse
 import traceback
+import subprocess
 
 from osgeo import ogr
 from slugify import slugify
@@ -50,8 +50,9 @@ from requests.packages.urllib3.util.retry import Retry
 from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
-from django.http import Http404
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
+from django.utils.http import is_safe_url
+from django.middleware.csrf import get_token
 from django.shortcuts import get_object_or_404
 # use lazy gettext because some translated strings are used before
 # i18n infra is up
@@ -61,7 +62,10 @@ from django.contrib.gis.geos import GEOSGeometry
 from django.core.serializers.json import DjangoJSONEncoder
 from django.contrib.auth import get_user_model
 from geonode import geoserver, qgis_server, GeoNodeException  # noqa
-from geonode.base.auth import get_or_create_token
+from geonode.base.auth import (extend_token,
+                               get_or_create_token,
+                               get_token_from_auth_header,
+                               get_token_object_from_session)
 
 try:
     import json
@@ -135,6 +139,80 @@ def extract_tarfile(upload_file, extension='.shp', tempdir=None):
     return absolute_base_file
 
 
+def get_headers(request, url, raw_url, allowed_hosts=[]):
+    headers = {}
+    cookies = None
+    csrftoken = None
+
+    if settings.SESSION_COOKIE_NAME in request.COOKIES and is_safe_url(
+            url=raw_url, host=url.hostname):
+        cookies = request.META["HTTP_COOKIE"]
+
+    for cook in request.COOKIES:
+        name = str(cook)
+        value = request.COOKIES.get(name)
+        if name == 'csrftoken':
+            csrftoken = value
+        cook = "%s=%s" % (name, value)
+        cookies = cook if not cookies else (cookies + '; ' + cook)
+
+    csrftoken = get_token(request) if not csrftoken else csrftoken
+
+    if csrftoken:
+        headers['X-Requested-With'] = "XMLHttpRequest"
+        headers['X-CSRFToken'] = csrftoken
+        cook = "%s=%s" % ('csrftoken', csrftoken)
+        cookies = cook if not cookies else (cookies + '; ' + cook)
+
+    if cookies:
+        if 'JSESSIONID' in request.session and request.session['JSESSIONID']:
+            cookies = cookies + '; JSESSIONID=' + \
+                request.session['JSESSIONID']
+        headers['Cookie'] = cookies
+
+    if request.method in ("POST", "PUT") and "CONTENT_TYPE" in request.META:
+        headers["Content-Type"] = request.META["CONTENT_TYPE"]
+
+    access_token = None
+    site_url = urlparse.urlsplit(settings.SITEURL)
+    allowed_hosts += [url.hostname]
+    # We want to convert HTTP_AUTH into a Beraer Token only when hitting the local GeoServer
+    if site_url.hostname in allowed_hosts:
+        # we give precedence to obtained from Aithorization headers
+        if 'HTTP_AUTHORIZATION' in request.META:
+            auth_header = request.META.get(
+                'HTTP_AUTHORIZATION',
+                request.META.get('HTTP_AUTHORIZATION2'))
+            if auth_header:
+                headers['Authorization'] = auth_header
+                access_token = get_token_from_auth_header(auth_header, create_if_not_exists=True)
+        # otherwise we check if a session is active
+        elif request and request.user.is_authenticated:
+            access_token = get_token_object_from_session(request.session)
+
+            # we extend the token in case the session is active but the token expired
+            if access_token and access_token.is_expired():
+                extend_token(access_token)
+            else:
+                access_token = get_or_create_token(request.user)
+
+    if access_token:
+        headers['Authorization'] = 'Bearer %s' % access_token
+
+    pragma = "no-cache"
+    referer = request.META[
+        "HTTP_REFERER"] if "HTTP_REFERER" in request.META else \
+        "{scheme}://{netloc}/".format(scheme=site_url.scheme,
+                                      netloc=site_url.netloc)
+    encoding = request.META["HTTP_ACCEPT_ENCODING"] if "HTTP_ACCEPT_ENCODING" in request.META else "gzip"
+    headers.update({"Pragma": pragma,
+                    "Referer": referer,
+                    "Accept-encoding": encoding,
+    })
+
+    return (headers, access_token)
+
+
 def _get_basic_auth_info(request):
     """
     grab basic auth info
@@ -196,14 +274,14 @@ def _v(coord, x, source_srid=4326, target_srid=3857):
     if source_srid == 4326 and x and abs(coord) != 180.0:
         coord = coord - (round(coord / 360.0) * 360.0)
     if source_srid == 4326 and target_srid != 4326:
-        if x and coord >= 180.0:
+        if x and float(coord) >= 179.999:
             return 179.999
-        elif x and coord <= -180.0:
+        elif x and float(coord) <= -179.999:
             return -179.999
 
-        if not x and coord >= 90.0:
+        if not x and float(coord) >= 89.999:
             return 89.999
-        elif not x and coord <= -90.0:
+        elif not x and float(coord) <= -89.999:
             return -89.999
     return coord
 
@@ -233,10 +311,10 @@ def bbox_to_projection(native_bbox, target_srid=4326):
             projected_bbox = [str(x) for x in poly.extent]
             # Must be in the form : [x0, x1, y0, y1, EPSG:<target_srid>)
             return tuple([projected_bbox[0], projected_bbox[2], projected_bbox[1], projected_bbox[3]]) + \
-                ("EPSG:%s" % poly.srid,)
+                ("EPSG:%s" % target_srid,)
         except BaseException:
             tb = traceback.format_exc()
-            logger.debug(tb)
+            logger.info(tb)
 
     return native_bbox
 
@@ -266,8 +344,9 @@ def bounds_to_zoom_level(bounds, width, height):
     lngFraction = ((lngDiff + 360.0) if (lngDiff < 0) else lngDiff) / 360.0
     latZoom = zoom(float(height), WORLD_DIM['height'], latFraction)
     lngZoom = zoom(float(width), WORLD_DIM['width'], lngFraction)
-    ratio = float(max(width, height)) / float(min(width, height))
-    z_offset = 0 if ratio >= 1.5 else -1
+    # ratio = float(max(width, height)) / float(min(width, height))
+    # z_offset = 0 if ratio >= 2 else -1
+    z_offset = 0
     zoom = int(max(latZoom, lngZoom) + z_offset)
     zoom = 0 if zoom > ZOOM_MAX else zoom
     return max(zoom, 0)
@@ -828,11 +907,6 @@ def resolve_object(request, model, query, permission='base.view_resourcebase',
     if not allowed:
         mesg = permission_msg or _('Permission Denied')
         raise PermissionDenied(mesg)
-    if settings.MONITORING_ENABLED and obj:
-        if hasattr(obj, 'alternate') or obj.title:
-            resource_name = obj.alternate if hasattr(
-                obj, 'alternate') else obj.title
-            request.add_resource(model._meta.verbose_name_raw, resource_name)
     return obj
 
 
@@ -997,7 +1071,7 @@ def fixup_shp_columnnames(inShapefile, charset, tempdir=None):
         logger.debug(tb)
         inDataSource = None
     if inDataSource is None:
-        logger.warning('Could not open %s' % (inShapefile))
+        logger.debug('Could not open %s' % (inShapefile))
         return False, None, None
     else:
         inLayer = inDataSource.GetLayer()
@@ -1294,11 +1368,12 @@ class HttpClient(object):
             self.password = ogc_server_settings['PASSWORD'] if 'PASSWORD' in ogc_server_settings else 'geoserver'
 
     def request(self, url, method='GET', data=None, headers={}, stream=False, timeout=None, user=None):
-
         if (user or self.username != 'admin') and \
         check_ogc_backend(geoserver.BACKEND_PACKAGE) and 'Authorization' not in headers:
             if connection.cursor().db.vendor not in ('sqlite', 'sqlite3', 'spatialite'):
                 try:
+                    if user and isinstance(user, basestring):
+                        user = get_user_model().objects.get(username=user)
                     _u = user or get_user_model().objects.get(username=self.username)
                     access_token = get_or_create_token(_u)
                     if access_token and not access_token.is_expired():
@@ -1328,6 +1403,7 @@ class HttpClient(object):
             pool_connections=self.pool_connections
         )
         session.mount("{scheme}://".format(scheme=urlparse.urlsplit(url).scheme), adapter)
+        session.verify = False
         action = getattr(session, method.lower(), None)
         if action:
             response = action(
@@ -1481,44 +1557,49 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
 
     # Prune old links
     if prune:
+        logger.info(" -- Resource Links[Prune old links]...")
         _def_link_types = (
             'data', 'image', 'original', 'html', 'OGC:WMS', 'OGC:WFS', 'OGC:WCS')
         Link.objects.filter(resource=instance.resourcebase_ptr, link_type__in=_def_link_types).delete()
+        logger.info(" -- Resource Links[Prune old links]...done!")
 
     if check_ogc_backend(geoserver.BACKEND_PACKAGE):
         from geonode.geoserver.ows import wcs_links, wfs_links, wms_links
         from geonode.geoserver.helpers import ogc_server_settings, gs_catalog
 
         # Compute parameters for the new links
+        logger.info(" -- Resource Links[Compute parameters for the new links]...")
         height = 550
         width = 550
-        bbox = None
-        srid = instance.srid if instance.srid else getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:4326')
-        try:
-            gs_resource = gs_catalog.get_resource(
-                name=instance.name,
-                workspace=instance.workspace)
-            if not gs_resource:
-                gs_resource = gs_catalog.get_resource(name=instance.name)
-            bbox = gs_resource.native_bbox
-
-            dx = float(bbox[1]) - float(bbox[0])
-            dy = float(bbox[3]) - float(bbox[2])
-            dataAspect = 1 if dy == 0 else dx / dy
-            width = int(height * dataAspect)
-
-            srid = bbox[4]
-            bbox = ','.join(str(x) for x in [bbox[0], bbox[2], bbox[1], bbox[3]])
-        except BaseException as e:
-            logger.exception(e)
 
         # Parse Layer BBOX and SRID
-        if not bbox and srid and instance.bbox_x0:
+        bbox = None
+        srid = instance.srid if instance.srid else getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:4326')
+        if instance.srid and instance.bbox_x0:
             bbox = ','.join(str(x) for x in [instance.bbox_x0, instance.bbox_y0,
                                              instance.bbox_x1, instance.bbox_y1])
+        else:
+            try:
+                gs_resource = gs_catalog.get_resource(
+                    name=instance.name,
+                    workspace=instance.workspace)
+                if not gs_resource:
+                    gs_resource = gs_catalog.get_resource(name=instance.name)
+                bbox = gs_resource.native_bbox
+
+                dx = float(bbox[1]) - float(bbox[0])
+                dy = float(bbox[3]) - float(bbox[2])
+                dataAspect = 1 if dy == 0 else dx / dy
+                width = int(height * dataAspect)
+
+                srid = bbox[4]
+                bbox = ','.join(str(x) for x in [bbox[0], bbox[2], bbox[1], bbox[3]])
+            except BaseException as e:
+                logger.exception(e)
 
         # Create Raw Data download link
         if settings.DISPLAY_ORIGINAL_DATASET_LINK:
+            logger.info(" -- Resource Links[Create Raw Data download link]...")
             download_url = urljoin(settings.SITEURL,
                                    reverse('download', args=[instance.id]))
             Link.objects.update_or_create(
@@ -1531,11 +1612,13 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                     link_type='original',
                 )
             )
+            logger.info(" -- Resource Links[Create Raw Data download link]...done!")
         else:
             Link.objects.filter(resource=instance.resourcebase_ptr,
                                 name='Original Dataset').delete()
 
         # Set download links for WMS, WCS or WFS and KML
+        logger.info(" -- Resource Links[Set download links for WMS, WCS or WFS and KML]...")
         links = wms_links(ogc_server_settings.public_url + 'ows?',
                           instance.alternate.encode('utf-8'),
                           bbox,
@@ -1544,16 +1627,25 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                           width)
 
         for ext, name, mime, wms_url in links:
-            Link.objects.update_or_create(
-                resource=instance.resourcebase_ptr,
-                name=ugettext(name),
-                defaults=dict(
-                    extension=ext,
-                    url=wms_url,
-                    mime=mime,
-                    link_type='image',
+            try:
+                Link.objects.update_or_create(
+                    resource=instance.resourcebase_ptr,
+                    name=ugettext(name),
+                    defaults=dict(
+                        extension=ext,
+                        url=wms_url,
+                        mime=mime,
+                        link_type='image',
+                    )
                 )
-            )
+            except Link.MultipleObjectsReturned:
+                _d = dict(extension=ext,
+                          url=wms_url,
+                          mime=mime,
+                          link_type='image')
+                Link.objects.filter(resource=instance.resourcebase_ptr,
+                                    name=ugettext(name),
+                                    link_type='image').update(**_d)
 
         if instance.storeType == "dataStore":
             links = wfs_links(ogc_server_settings.public_url + 'ows?',
@@ -1563,17 +1655,19 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
             for ext, name, mime, wfs_url in links:
                 if mime == 'SHAPE-ZIP':
                     name = 'Zipped Shapefile'
-                Link.objects.update_or_create(
-                    resource=instance.resourcebase_ptr,
-                    url=wfs_url,
-                    defaults=dict(
-                        extension=ext,
-                        name=name,
-                        mime=mime,
+                if (Link.objects.filter(resource=instance.resourcebase_ptr,
+                                        url=wfs_url,
+                                        name=name).count() < 2):
+                    Link.objects.update_or_create(
+                        resource=instance.resourcebase_ptr,
                         url=wfs_url,
+                        name=name,
                         link_type='data',
+                        defaults=dict(
+                            extension=ext,
+                            mime=mime,
+                        )
                     )
-                )
 
         elif instance.storeType == 'coverageStore':
             links = wcs_links(ogc_server_settings.public_url + 'wcs?',
@@ -1582,61 +1676,63 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                               srid)
 
         for ext, name, mime, wcs_url in links:
-            Link.objects.update_or_create(
-                resource=instance.resourcebase_ptr,
-                url=wcs_url,
-                defaults=dict(
-                    extension=ext,
+            if (Link.objects.filter(resource=instance.resourcebase_ptr,
+                                    url=wcs_url,
+                                    name=name).count() < 2):
+                Link.objects.update_or_create(
+                    resource=instance.resourcebase_ptr,
+                    url=wcs_url,
                     name=name,
-                    mime=mime,
                     link_type='data',
+                    defaults=dict(
+                        extension=ext,
+                        mime=mime,
+                    )
                 )
-            )
 
         site_url = settings.SITEURL.rstrip('/') if settings.SITEURL.startswith('http') else settings.SITEURL
         html_link_url = '%s%s' % (
             site_url, instance.get_absolute_url())
 
-        if Link.objects.filter(resource=instance.resourcebase_ptr, url=html_link_url).count() > 1:
-            Link.objects.filter(resource=instance.resourcebase_ptr, url=html_link_url).delete()
-        Link.objects.get_or_create(
-            resource=instance.resourcebase_ptr,
-            url=html_link_url,
-            defaults=dict(
-                extension='html',
+        if (Link.objects.filter(resource=instance.resourcebase_ptr,
+                                url=html_link_url,
+                                name=instance.alternate).count() < 2):
+            Link.objects.update_or_create(
+                resource=instance.resourcebase_ptr,
+                url=html_link_url,
                 name=instance.alternate,
-                mime='text/html',
                 link_type='html',
+                defaults=dict(
+                    extension='html',
+                    mime='text/html',
+                )
             )
-        )
+        logger.info(" -- Resource Links[Set download links for WMS, WCS or WFS and KML]...done!")
 
         # Legend link
-        try:
-            Link.objects.filter(resource=instance.resourcebase_ptr, name='Legend').delete()
-        except BaseException:
-            pass
-
+        logger.info(" -- Resource Links[Legend link]...")
         for style in instance.styles.all():
             legend_url = ogc_server_settings.PUBLIC_LOCATION + \
                 'ows?service=WMS&request=GetLegendGraphic&format=image/png&WIDTH=20&HEIGHT=20&LAYER=' + \
                 instance.alternate + '&STYLE=' + style.name + \
                 '&legend_options=fontAntiAliasing:true;fontSize:12;forceLabels:on'
 
-            if Link.objects.filter(resource=instance.resourcebase_ptr, url=legend_url).count() > 1:
-                Link.objects.filter(resource=instance.resourcebase_ptr, url=legend_url).delete()
-            Link.objects.update_or_create(
-                resource=instance.resourcebase_ptr,
-                name='Legend',
-                url=legend_url,
-                defaults=dict(
-                    extension='png',
+            if Link.objects.filter(resource=instance.resourcebase_ptr, url=legend_url).count() < 2:
+                Link.objects.update_or_create(
+                    resource=instance.resourcebase_ptr,
+                    name='Legend',
                     url=legend_url,
-                    mime='image/png',
-                    link_type='image',
+                    defaults=dict(
+                        extension='png',
+                        url=legend_url,
+                        mime='image/png',
+                        link_type='image',
+                    )
                 )
-            )
+        logger.info(" -- Resource Links[Legend link]...done!")
 
         # Thumbnail link
+        logger.info(" -- Resource Links[Thumbnail link]...")
         from django.contrib.staticfiles.templatetags import staticfiles
         if instance.get_thumbnail_url() == staticfiles.static(settings.MISSING_THUMBNAIL):
             from geonode.geoserver.helpers import create_gs_thumbnail
@@ -1652,62 +1748,62 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                     link_type='image',
                 )
             )
+        logger.info(" -- Resource Links[Thumbnail link]...done!")
 
+        logger.info(" -- Resource Links[OWS Links]...")
         # ogc_wms_path = '%s/ows' % instance.workspace
         ogc_wms_path = 'ows'
         ogc_wms_url = urljoin(ogc_server_settings.public_url, ogc_wms_path)
         ogc_wms_name = 'OGC WMS: %s Service' % instance.workspace
-        if Link.objects.filter(resource=instance.resourcebase_ptr, name=ogc_wms_name, url=ogc_wms_url).count() > 1:
-            Link.objects.filter(resource=instance.resourcebase_ptr, name=ogc_wms_name, url=ogc_wms_url).delete()
-        Link.objects.get_or_create(
-            resource=instance.resourcebase_ptr,
-            url=ogc_wms_url,
-            name=ogc_wms_name,
-            defaults=dict(
-                extension='html',
+        if Link.objects.filter(resource=instance.resourcebase_ptr, name=ogc_wms_name, url=ogc_wms_url).count() < 2:
+            Link.objects.get_or_create(
+                resource=instance.resourcebase_ptr,
                 url=ogc_wms_url,
-                mime='text/html',
-                link_type='OGC:WMS',
+                name=ogc_wms_name,
+                defaults=dict(
+                    extension='html',
+                    url=ogc_wms_url,
+                    mime='text/html',
+                    link_type='OGC:WMS',
+                )
             )
-        )
 
         if instance.storeType == "dataStore":
             # ogc_wfs_path = '%s/wfs' % instance.workspace
             ogc_wfs_path = 'ows'
             ogc_wfs_url = urljoin(ogc_server_settings.public_url, ogc_wfs_path)
             ogc_wfs_name = 'OGC WFS: %s Service' % instance.workspace
-            if Link.objects.filter(resource=instance.resourcebase_ptr, name=ogc_wfs_name, url=ogc_wfs_url).count() > 1:
-                Link.objects.filter(resource=instance.resourcebase_ptr, name=ogc_wfs_name, url=ogc_wfs_url).delete()
-            Link.objects.get_or_create(
-                resource=instance.resourcebase_ptr,
-                url=ogc_wfs_url,
-                name=ogc_wfs_name,
-                defaults=dict(
-                    extension='html',
+            if Link.objects.filter(resource=instance.resourcebase_ptr, name=ogc_wfs_name, url=ogc_wfs_url).count() < 2:
+                Link.objects.get_or_create(
+                    resource=instance.resourcebase_ptr,
                     url=ogc_wfs_url,
-                    mime='text/html',
-                    link_type='OGC:WFS',
+                    name=ogc_wfs_name,
+                    defaults=dict(
+                        extension='html',
+                        url=ogc_wfs_url,
+                        mime='text/html',
+                        link_type='OGC:WFS',
+                    )
                 )
-            )
 
         if instance.storeType == "coverageStore":
             # ogc_wcs_path = '%s/wcs' % instance.workspace
             ogc_wcs_path = 'ows'
             ogc_wcs_url = urljoin(ogc_server_settings.public_url, ogc_wcs_path)
             ogc_wcs_name = 'OGC WCS: %s Service' % instance.workspace
-            if Link.objects.filter(resource=instance.resourcebase_ptr, name=ogc_wcs_name, url=ogc_wcs_url).count() > 1:
-                Link.objects.filter(resource=instance.resourcebase_ptr, name=ogc_wcs_name, url=ogc_wcs_url).delete()
-            Link.objects.get_or_create(
-                resource=instance.resourcebase_ptr,
-                url=ogc_wcs_url,
-                name=ogc_wcs_name,
-                defaults=dict(
-                    extension='html',
+            if Link.objects.filter(resource=instance.resourcebase_ptr, name=ogc_wcs_name, url=ogc_wcs_url).count() < 2:
+                Link.objects.get_or_create(
+                    resource=instance.resourcebase_ptr,
                     url=ogc_wcs_url,
-                    mime='text/html',
-                    link_type='OGC:WCS',
+                    name=ogc_wcs_name,
+                    defaults=dict(
+                        extension='html',
+                        url=ogc_wcs_url,
+                        mime='text/html',
+                        link_type='OGC:WCS',
+                    )
                 )
-            )
+        logger.info(" -- Resource Links[OWS Links]...done!")
     elif check_ogc_backend(qgis_server.BACKEND_PACKAGE):
         from geonode.layers.models import LayerFile
         from geonode.qgis_server.helpers import (

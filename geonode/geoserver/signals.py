@@ -20,7 +20,7 @@
 
 import errno
 import logging
-
+from time import sleep
 from django.conf import settings
 from django.forms.models import model_to_dict
 
@@ -89,15 +89,6 @@ def geoserver_post_save(instance, sender, created, **kwargs):
         if getattr(settings, 'DELAYED_SECURITY_SIGNALS', False):
             instance.set_dirty_state()
 
-        if instance.storeType != 'remoteStore' and created:
-            logger.info("... Creating Default Resource Links for Layer [%s]" % (instance.alternate))
-            set_resource_default_links(instance, sender, prune=True)
-            logger.info("... Creating Thumbnail for Layer [%s]" % (instance.alternate))
-            try:
-                create_gs_thumbnail(instance, overwrite=True, check_bbox=True)
-            except BaseException:
-                logger.warn("Failure Creating Thumbnail for Layer [%s]" % (instance.alternate))
-
 
 @on_ogc_backend(BACKEND_PACKAGE)
 def geoserver_post_save_local(instance, *args, **kwargs):
@@ -112,6 +103,14 @@ def geoserver_post_save_local(instance, *args, **kwargs):
         * Metadata Links,
         * Point of Contact name and url
     """
+    try:
+        instance.refresh_from_db()
+    except BaseException:
+        from django.db import connection
+        connection._rollback()
+
+    instance.refresh_from_db()
+
     # Don't run this signal if is a Layer from a remote service
     if getattr(instance, "remote_service", None) is not None:
         return
@@ -123,6 +122,7 @@ def geoserver_post_save_local(instance, *args, **kwargs):
 
     gs_resource = None
     values = None
+    _tries = 0
 
     # If the store in None then it's a new instance from an upload,
     # only in this case run the geoserver_upload method
@@ -142,30 +142,40 @@ def geoserver_post_save_local(instance, *args, **kwargs):
                                                                    # keywords=instance.keywords,
                                                                    charset=instance.charset)
 
-    gs_resource = gs_catalog.get_resource(
-        name=instance.name,
-        store=instance.store,
-        workspace=instance.workspace)
-    if not gs_resource:
-        gs_resource = gs_catalog.get_resource(name=instance.alternate)
+    def fetch_gs_resource(values, tries):
+        _max_tries = getattr(ogc_server_settings, "MAX_RETRIES", 5)
+        gs_resource = gs_catalog.get_resource(
+            name=instance.name,
+            store=instance.store,
+            workspace=instance.workspace)
+        if not gs_resource:
+            gs_resource = gs_catalog.get_resource(name=instance.alternate)
 
-    if gs_resource:
-        gs_resource.title = instance.title or ""
-        gs_resource.abstract = instance.abstract or ""
-        gs_resource.name = instance.name or ""
+        if gs_resource:
+            gs_resource.title = instance.title or ""
+            gs_resource.abstract = instance.abstract or ""
+            gs_resource.name = instance.name or ""
 
-        if not values:
-            values = dict(store=gs_resource.store.name,
-                          storeType=gs_resource.store.resource_type,
-                          alternate=gs_resource.store.workspace.name + ':' + gs_resource.name,
-                          title=gs_resource.title or gs_resource.store.name,
-                          abstract=gs_resource.abstract or '',
-                          owner=instance.owner)
-    else:
-        msg = "There isn't a geoserver resource for this layer: %s" % instance.name
-        logger.exception(msg)
-        # raise Exception(msg)
-        gs_resource = None
+            if not values:
+                values = dict(store=gs_resource.store.name,
+                              storeType=gs_resource.store.resource_type,
+                              alternate=gs_resource.store.workspace.name + ':' + gs_resource.name,
+                              title=gs_resource.title or gs_resource.store.name,
+                              abstract=gs_resource.abstract or '',
+                              owner=instance.owner)
+        else:
+            msg = "There isn't a geoserver resource for this layer: %s" % instance.name
+            logger.exception(msg)
+            if tries >= _max_tries:
+                raise GeoNodeException(msg)
+            gs_resource = None
+            sleep(3.00)
+
+        return (values, gs_resource)
+
+    while not gs_resource:
+        values, gs_resource = fetch_gs_resource(values, _tries)
+        _tries += 1
 
     # Get metadata links
     metadata_links = []
@@ -288,22 +298,27 @@ def geoserver_post_save_local(instance, *args, **kwargs):
                         if keyword not in instance.keyword_list():
                             instance.keywords.add(keyword)
             except BaseException:
-                pass
+                from django.db import connection
+                connection._rollback()
 
-        if any(instance.keyword_list()):
-            keywords = instance.keyword_list()
-            gs_resource.keywords = [kw for kw in list(set(keywords))]
+        try:
+            if any(instance.keyword_list()):
+                keywords = instance.keyword_list()
+                gs_resource.keywords = [kw for kw in list(set(keywords))]
 
-            # gs_resource should only be called if
-            # ogc_server_settings.BACKEND_WRITE_ENABLED == True
-            if getattr(ogc_server_settings, "BACKEND_WRITE_ENABLED", True):
-                try:
-                    gs_catalog.save(gs_resource)
-                except geoserver.catalog.FailedRequestError as e:
-                    msg = ('Error while trying to save resource named %s in GeoServer, '
-                           'try to use: "%s"' % (gs_resource, str(e)))
-                    e.args = (msg,)
-                    logger.exception(e)
+                # gs_resource should only be called if
+                # ogc_server_settings.BACKEND_WRITE_ENABLED == True
+                if getattr(ogc_server_settings, "BACKEND_WRITE_ENABLED", True):
+                    try:
+                        gs_catalog.save(gs_resource)
+                    except geoserver.catalog.FailedRequestError as e:
+                        msg = ('Error while trying to save resource named %s in GeoServer, '
+                               'try to use: "%s"' % (gs_resource, str(e)))
+                        e.args = (msg,)
+                        logger.exception(e)
+        except BaseException:
+            from django.db import connection
+            connection._rollback()
 
     to_update = {
         'title': instance.title or instance.name,
@@ -317,8 +332,12 @@ def geoserver_post_save_local(instance, *args, **kwargs):
     }
 
     # Update ResourceBase
-    resources = ResourceBase.objects.filter(id=instance.resourcebase_ptr.id)
-    resources.update(**to_update)
+    try:
+        resources = ResourceBase.objects.filter(id=instance.resourcebase_ptr.id)
+        resources.update(**to_update)
+    except BaseException:
+        from django.db import connection
+        connection._rollback()
 
     # to_update['name'] = instance.name,
     to_update['workspace'] = instance.workspace
@@ -327,13 +346,25 @@ def geoserver_post_save_local(instance, *args, **kwargs):
     to_update['typename'] = instance.alternate
 
     # Save all the modified information in the instance without triggering signals.
-    Layer.objects.filter(id=instance.id).update(**to_update)
+    try:
+        Layer.objects.filter(id=instance.id).update(**to_update)
+    except BaseException:
+        from django.db import connection
+        connection._rollback()
 
     # Refresh from DB
-    instance.refresh_from_db()
+    try:
+        instance.refresh_from_db()
+    except BaseException:
+        from django.db import connection
+        connection._rollback()
 
     # Updating the Catalogue
-    catalogue_post_save(instance=instance, sender=instance.__class__)
+    try:
+        catalogue_post_save(instance=instance, sender=instance.__class__)
+    except BaseException:
+        from django.db import connection
+        connection._rollback()
 
     # store the resource to avoid another geoserver call in the post_save
     if gs_resource:
@@ -342,6 +373,14 @@ def geoserver_post_save_local(instance, *args, **kwargs):
     # some thumbnail generators will update thumbnail_url.  If so, don't
     # immediately re-generate the thumbnail here.  use layer#save(update_fields=['thumbnail_url'])
     if gs_resource:
+        logger.info("... Creating Default Resource Links for Layer [%s]" % (instance.alternate))
+        try:
+            set_resource_default_links(instance, instance, prune=True)
+        except BaseException:
+            from django.db import connection
+            connection._rollback()
+            logger.warn("Failure Creating Default Resource Links for Layer [%s]" % (instance.alternate))
+
         if 'update_fields' in kwargs and kwargs['update_fields'] is not None and \
                 'thumbnail_url' in kwargs['update_fields']:
             logger.info("... Creating Thumbnail for Layer [%s]" % (instance.alternate))

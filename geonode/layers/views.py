@@ -85,6 +85,7 @@ from geonode.utils import build_social_links
 from geonode.base.views import batch_modify
 from geonode.base.models import Thesaurus
 from geonode.maps.models import Map
+from geonode.monitoring import register_event
 from geonode.geoserver.helpers import (gs_catalog,
                                        ogc_server_settings,
                                        set_layer_style)  # cascading_delete
@@ -248,7 +249,12 @@ def layer_upload(request, template='upload/layer_upload.html'):
                     upload_session = latest_uploads[0]
                     # Ref issue #4232
                     if not isinstance(error, TracebackType):
-                        upload_session.error = pickle.dumps(error).decode("utf-8", "replace")
+                        try:
+                            upload_session.error = pickle.dumps(error).decode("utf-8", "replace")
+                        except BaseException:
+                            err_msg = 'The error could not be parsed'
+                            upload_session.error = err_msg
+                            logger.error("TypeError: can't pickle traceback objects")
                     else:
                         err_msg = 'The error could not be parsed'
                         upload_session.error = err_msg
@@ -294,16 +300,9 @@ def layer_upload(request, template='upload/layer_upload.html'):
             out['errormsgs'] = errormsgs
         if out['success']:
             status_code = 200
+            register_event(request, 'upload', saved_layer)
         else:
             status_code = 400
-        if settings.MONITORING_ENABLED:
-            layer_name = None
-            if saved_layer and hasattr(saved_layer, 'alternate'):
-                layer_name = saved_layer.alternate
-            elif name:
-                layer_name = name
-            if layer_name:
-                request.add_resource('layer', layer_name)
 
         # null-safe charset
         layer_charset = 'UTF-8'
@@ -344,17 +343,6 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         'base.view_resourcebase',
         _PERMISSION_MSG_VIEW)
 
-    # assert False, str(layer_bbox)
-    config = layer.attribute_config()
-
-    # Add required parameters for GXP lazy-loading
-    layer_bbox = layer.bbox[0:4]
-    bbox = layer_bbox[:]
-    bbox[0] = float(layer_bbox[0])
-    bbox[1] = float(layer_bbox[2])
-    bbox[2] = float(layer_bbox[1])
-    bbox[3] = float(layer_bbox[3])
-
     def decimal_encode(bbox):
         import decimal
         _bbox = []
@@ -362,7 +350,6 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
             if isinstance(o, decimal.Decimal):
                 o = (str(o) for o in [o])
             _bbox.append(o)
-        # Must be in the form : [x0, x1, y0, y1
         return [_bbox[0], _bbox[2], _bbox[1], _bbox[3]]
 
     def sld_definition(style):
@@ -381,11 +368,23 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         }
         return _sld
 
+    # assert False, str(layer_bbox)
+    config = layer.attribute_config()
+
     if hasattr(layer, 'srid'):
         config['crs'] = {
             'type': 'name',
             'properties': layer.srid
         }
+
+    # Add required parameters for GXP lazy-loading
+    layer_bbox = layer.bbox[0:4]
+    # Must be in the form xmin, ymin, xmax, ymax
+    bbox = [
+        float(layer_bbox[0]), float(layer_bbox[2]),
+        float(layer_bbox[1]), float(layer_bbox[3])
+    ]
+
     # Add required parameters for GXP lazy-loading
     attribution = "%s %s" % (layer.owner.first_name,
                              layer.owner.last_name) if layer.owner.first_name or layer.owner.last_name else str(
@@ -399,9 +398,8 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
     config["wrapDateLine"] = True
     config["visibility"] = True
     config["srs"] = srs
-    config["bbox"] = decimal_encode(
-        bbox_to_projection([float(coord) for coord in layer_bbox] + [layer.srid, ],
-                           target_srid=int(srs.split(":")[1]))[:4])
+    config["bbox"] = bbox_to_projection([float(coord) for coord in layer_bbox] + [layer.srid, ],
+                                        target_srid=int(srs.split(":")[1]))[:4]
 
     config["capability"] = {
         "abstract": layer.abstract,
@@ -416,21 +414,20 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
             },
             srs: {
                 "srs": srs,
-                "bbox": decimal_encode(
-                    bbox_to_projection([float(coord) for coord in layer_bbox] + [layer.srid, ],
-                                       target_srid=srs_srid)[:4])
+                "bbox": bbox_to_projection([float(coord) for coord in layer_bbox] + [layer.srid, ],
+                                           target_srid=srs_srid)[:4]
             },
             "EPSG:4326": {
                 "srs": "EPSG:4326",
                 "bbox": decimal_encode(bbox) if layer.srid == 'EPSG:4326' else
-                decimal_encode(bbox_to_projection(
-                    [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=4326)[:4])
+                bbox_to_projection(
+                    [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=4326)[:4]
             },
             "EPSG:900913": {
                 "srs": "EPSG:900913",
                 "bbox": decimal_encode(bbox) if layer.srid == 'EPSG:900913' else
-                decimal_encode(bbox_to_projection(
-                    [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=3857)[:4])
+                bbox_to_projection(
+                    [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=3857)[:4]
             }
         },
         "srs": {
@@ -455,8 +452,8 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         "prefix": layer.alternate.split(":")[0] if ":" in layer.alternate else "",
         "keywords": [k.name for k in layer.keywords.all()] if layer.keywords else [],
         "llbbox": decimal_encode(bbox) if layer.srid == 'EPSG:4326' else
-        decimal_encode(bbox_to_projection(
-            [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=4326)[:4])
+        bbox_to_projection(
+            [float(coord) for coord in layer_bbox] + [layer.srid, ], target_srid=4326)[:4]
     }
 
     all_times = None
@@ -471,12 +468,12 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         if wms_capabilities_resp.status_code >= 200 and wms_capabilities_resp.status_code < 400:
             wms_capabilities = wms_capabilities_resp.getvalue()
             if wms_capabilities:
-                import xml.etree.ElementTree as ET
+                from defusedxml import lxml as dlxml
                 namespaces = {'wms': 'http://www.opengis.net/wms',
                               'xlink': 'http://www.w3.org/1999/xlink',
                               'xsi': 'http://www.w3.org/2001/XMLSchema-instance'}
 
-                e = ET.fromstring(wms_capabilities)
+                e = dlxml.fromstring(wms_capabilities)
                 for atype in e.findall(
                         "./[wms:Name='%s']/wms:Dimension[@name='time']" % (layer.alternate), namespaces):
                     dim_name = atype.get('name')
@@ -584,12 +581,12 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
         if wms_capabilities_resp.status_code >= 200 and wms_capabilities_resp.status_code < 400:
             wms_capabilities = wms_capabilities_resp.getvalue()
             if wms_capabilities:
-                import xml.etree.ElementTree as ET
+                from defusedxml import lxml as dlxml
                 namespaces = {'wms': 'http://www.opengis.net/wms',
                               'xlink': 'http://www.w3.org/1999/xlink',
                               'xsi': 'http://www.w3.org/2001/XMLSchema-instance'}
 
-                e = ET.fromstring(wms_capabilities)
+                e = dlxml.fromstring(wms_capabilities)
                 for atype in e.findall(
                         "./[wms:Name='%s']/wms:Dimension[@name='time']" % (layer.alternate), namespaces):
                     dim_name = atype.get('name')
@@ -759,6 +756,8 @@ def layer_detail(request, layername, template='layers/layer_detail.html'):
             from geonode.favorite.utils import get_favorite_info
             context_dict["favorite_info"] = get_favorite_info(request.user, layer)
 
+    register_event(request, 'view', layer)
+
     return TemplateResponse(
         request, template, context=context_dict)
 
@@ -851,6 +850,7 @@ def layer_feature_catalogue(
         'attributes': attributes,
         'metadata': settings.PYCSW['CONFIGURATION']['metadata:main']
     }
+    register_event(request, 'view', layer)
     return render(
         request,
         template,
@@ -875,6 +875,7 @@ def layer_metadata(
         extra=0,
         form=LayerAttributeForm,
     )
+
     topic_category = layer.category
 
     poc = layer.poc
@@ -936,6 +937,7 @@ def layer_metadata(
         la for la in default_map_config(request)[1] if la.ows_url is None]
 
     if request.method == "POST":
+
         if layer.metadata_uploaded_preserve:  # layer metadata cannot be edited
             out = {
                 'success': False,
@@ -1120,12 +1122,14 @@ def layer_metadata(
                             logger.error(tb)
 
             layer.tkeywords.add(*tkeywords_to_add)
+            register_event(request, 'change_metadata', layer)
         except BaseException:
             tb = traceback.format_exc()
             logger.error(tb)
 
         return HttpResponse(json.dumps({'message': message}))
 
+    register_event(request, 'view_metadata', layer)
     if settings.ADMIN_MODERATE_UPLOADS:
         if not request.user.is_superuser:
             layer_form.fields['is_published'].widget.attrs.update(
@@ -1211,16 +1215,13 @@ def layer_metadata_advanced(request, layername):
 def layer_change_poc(request, ids, template='layers/layer_change_poc.html'):
     layers = Layer.objects.filter(id__in=ids.split('_'))
 
-    if settings.MONITORING_ENABLED:
-        for _l in layers:
-            if hasattr(_l, 'alternate'):
-                request.add_resource('layer', _l.alternate)
     if request.method == 'POST':
         form = PocForm(request.POST)
         if form.is_valid():
             for layer in layers:
                 layer.poc = form.cleaned_data['contact']
                 layer.save()
+
             # Process the data in form.cleaned_data
             # ...
             # Redirect after POST
@@ -1316,6 +1317,7 @@ def layer_replace(request, layername, template='layers/layer_replace.html'):
 
         if out['success']:
             status_code = 200
+            register_event(request, 'change', layer)
         else:
             status_code = 400
         return HttpResponse(
@@ -1366,6 +1368,8 @@ def layer_remove(request, layername, template='layers/layer_remove.html'):
             messages.error(request, message)
             return render(
                 request, template, context={"layer": layer})
+
+        register_event(request, 'remove', layer)
         return HttpResponseRedirect(reverse("layer_browse"))
     else:
         return HttpResponse("Not allowed", status=403)
@@ -1513,6 +1517,8 @@ def layer_metadata_detail(
         except GroupProfile.DoesNotExist:
             group = None
     site_url = settings.SITEURL.rstrip('/') if settings.SITEURL.startswith('http') else settings.SITEURL
+
+    register_event(request, 'view_metadata', layer)
 
     return render(request, template, context={
         "resource": layer,

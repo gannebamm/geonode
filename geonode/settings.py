@@ -99,9 +99,19 @@ DATABASE_URL = os.getenv(
 # 'ENGINE': 'django.contrib.gis.db.backends.postgis'
 # see https://docs.djangoproject.com/en/1.8/ref/contrib/gis/db-api/#module-django.contrib.gis.db.backends for
 # detailed list of supported backends and notes.
-_db_conf = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
+_db_conf = dj_database_url.parse(DATABASE_URL, conn_max_age=5)
 if 'spatialite' in DATABASE_URL:
     SPATIALITE_LIBRARY_PATH = 'mod_spatialite.so'
+
+if 'CONN_TOUT' in _db_conf:
+    _db_conf['CONN_TOUT'] = 5
+if 'postgresql' in DATABASE_URL or 'postgis' in DATABASE_URL:
+    if 'OPTIONS' not in _db_conf:
+        _db_conf['OPTIONS'] = {}
+    _db_conf['OPTIONS'].update({
+        'connect_timeout': 5,
+    })
+
 DATABASES = {
     'default': _db_conf
 }
@@ -111,8 +121,18 @@ if os.getenv('DEFAULT_BACKEND_DATASTORE'):
                                 'postgis://\
 geonode_data:geonode_data@localhost:5432/geonode_data')
     DATABASES[os.getenv('DEFAULT_BACKEND_DATASTORE')] = dj_database_url.parse(
-        GEODATABASE_URL, conn_max_age=600
+        GEODATABASE_URL, conn_max_age=5
     )
+    _geo_db = DATABASES[os.getenv('DEFAULT_BACKEND_DATASTORE')]
+    if 'CONN_TOUT' in DATABASES['default']:
+        _geo_db['CONN_TOUT'] = 5
+    if 'postgresql' in GEODATABASE_URL or 'postgis' in GEODATABASE_URL:
+        _geo_db['OPTIONS'] = DATABASES['default']['OPTIONS'] if 'OPTIONS' in DATABASES['default'] else {}
+        _geo_db['OPTIONS'].update({
+            'connect_timeout': 5,
+        })
+
+    DATABASES[os.getenv('DEFAULT_BACKEND_DATASTORE')] = _geo_db
 
 # If set to 'True' it will refresh/regenrate all resource links everytime a 'migrate' will be performed
 UPDATE_RESOURCE_LINKS_AT_MIGRATE = ast.literal_eval(os.getenv('UPDATE_RESOURCE_LINKS_AT_MIGRATE', 'False'))
@@ -461,8 +481,8 @@ selenium_tests = ast.literal_eval(os.environ.get('TEST_RUN_SELENIUM', 'False'))
 
 # Django 1.11 ParallelTestSuite
 TEST_RUNNER = 'geonode.tests.suite.runner.GeoNodeBaseSuiteDiscoverRunner'
-TEST_RUNNER_KEEPDB = 0
-TEST_RUNNER_PARALLEL = 1
+TEST_RUNNER_KEEPDB = os.environ.get('TEST_RUNNER_KEEPDB', 0)
+TEST_RUNNER_PARALLEL = os.environ.get('TEST_RUNNER_PARALLEL', 1)
 
 # GeoNode test suite
 # TEST_RUNNER = 'geonode.tests.suite.runner.DjangoParallelTestSuiteRunner'
@@ -615,6 +635,12 @@ SLPi97Rwe7OiVCHJvFxmCI9RYPbJzUO7B0sAB7AuKvMDglF8UAnbTJXDOavrbXrb
 g+gp5fQ4nmDrSNHjakzQCX2mKMsx/GLWZzoIDd7ECV9f
 -----END RSA PRIVATE KEY-----"""
 }
+OAUTH2_PROVIDER_APPLICATION_MODEL = "oauth2_provider.Application"
+OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = "oauth2_provider.AccessToken"
+OAUTH2_PROVIDER_ID_TOKEN_MODEL = "oauth2_provider.IDToken"
+OAUTH2_PROVIDER_GRANT_MODEL = "oauth2_provider.Grant"
+OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "oauth2_provider.RefreshToken"
+
 # In order to protect oauth2 REST endpoints, used by GeoServer to fetch user roles and
 # infos, you should set this key and configure the "geonode REST role service"
 # accordingly. Keep it secret!
@@ -1045,7 +1071,7 @@ except ValueError:
         else re.split(r' *[,|:|;] *', os.getenv('PROXY_ALLOWED_HOSTS'))
 
 # The proxy to use when making cross origin requests.
-PROXY_URL = '/proxy/?url=' if DEBUG else os.environ.get('PROXY_URL', None)
+PROXY_URL = os.environ.get('PROXY_URL', '/proxy/?url=')
 
 # Haystack Search Backend Configuration. To enable,
 # first install the following:
@@ -1112,6 +1138,7 @@ TASTYPIE_DEFAULT_FORMATS = ['json']
 AUTO_GENERATE_AVATAR_SIZES = (
     20, 30, 32, 40, 50, 65, 70, 80, 100, 140, 200, 240
 )
+AVATAR_GRAVATAR_SSL = ast.literal_eval(os.getenv('AVATAR_GRAVATAR_SSL', 'False'))
 
 # Number of results per page listed in the GeoNode search pages
 CLIENT_RESULTS_LIMIT = int(os.getenv('CLIENT_RESULTS_LIMIT', '20'))
@@ -1145,12 +1172,29 @@ if FAVORITE_ENABLED:
     if 'geonode.favorite' not in INSTALLED_APPS:
         INSTALLED_APPS += ('geonode.favorite',)
 
+
+# Settings for RECAPTCHA plugin
+RECAPTCHA_ENABLED = ast.literal_eval(os.environ.get('RECAPTCHA_ENABLED', 'False'))
+
+if RECAPTCHA_ENABLED:
+    if 'captcha' not in INSTALLED_APPS:
+        INSTALLED_APPS += ('captcha',)
+    ACCOUNT_SIGNUP_FORM_CLASS = os.getenv("ACCOUNT_SIGNUP_FORM_CLASS",
+                                          'geonode.people.forms.AllauthReCaptchaSignupForm')
+    """
+     In order to generate reCaptcha keys, please see:
+      - https://pypi.org/project/django-recaptcha/#installation
+      - https://pypi.org/project/django-recaptcha/#local-development-and-functional-testing
+    """
+    RECAPTCHA_PUBLIC_KEY = os.getenv("RECAPTCHA_PUBLIC_KEY", 'geonode_RECAPTCHA_PUBLIC_KEY')
+    RECAPTCHA_PRIVATE_KEY = os.getenv("RECAPTCHA_PRIVATE_KEY", 'geonode_RECAPTCHA_PRIVATE_KEY')
+
 # Settings for MONITORING plugin
 MONITORING_ENABLED = ast.literal_eval(os.environ.get('MONITORING_ENABLED', 'True'))
 
 MONITORING_CONFIG = os.getenv("MONITORING_CONFIG", None)
 MONITORING_HOST_NAME = os.getenv("MONITORING_HOST_NAME", HOSTNAME)
-MONITORING_SERVICE_NAME = os.getenv("MONITORING_SERVICE_NAME", 'local-geonode')
+MONITORING_SERVICE_NAME = os.getenv("MONITORING_SERVICE_NAME", 'geonode')
 
 # how long monitoring data should be stored
 MONITORING_DATA_TTL = timedelta(days=int(os.getenv("MONITORING_DATA_TTL", 7)))
@@ -1165,6 +1209,31 @@ if MONITORING_ENABLED:
     if 'geonode.monitoring.middleware.MonitoringMiddleware' not in MIDDLEWARE_CLASSES:
         MIDDLEWARE_CLASSES += \
             ('geonode.monitoring.middleware.MonitoringMiddleware',)
+
+# skip certain paths to not to mud stats too much
+MONITORING_SKIP_PATHS = ('/api/o/',
+                         '/monitoring/',
+                         '/admin',
+                         '/lang.js',
+                         '/jsi18n',
+                         STATIC_URL,
+                         MEDIA_URL,
+                         re.compile('^/[a-z]{2}/admin/'),
+                         )
+
+# configure aggregation of past data to control data resolution
+# list of data age, aggregation, in reverse order
+# for current data, 1 minute resolution
+# for data older than 1 day, 1-hour resolution
+# for data older than 2 weeks, 1 day resolution
+MONITORING_DATA_AGGREGATION = (
+    (timedelta(seconds=0), timedelta(minutes=1),),
+    (timedelta(days=1), timedelta(minutes=60),),
+    (timedelta(days=14), timedelta(days=1),),
+)
+USER_ANALYTICS_ENABLED = ast.literal_eval(os.getenv('USER_ANALYTICS_ENABLED', 'True'))
+GEOIP_PATH = os.getenv('GEOIP_PATH', os.path.join(PROJECT_ROOT, 'GeoIPCities.dat'))
+# -- END Settings for MONITORING plugin
 
 CACHES = {
     # DUMMY CACHE FOR DEVELOPMENT
@@ -1184,8 +1253,6 @@ CACHES = {
 }
 
 GEONODE_CATALOGUE_METADATA_XSL = ast.literal_eval(os.getenv('GEONODE_CATALOGUE_METADATA_XSL', 'True'))
-
-
 
 # -- START Client Hooksets Setup
 
@@ -1312,72 +1379,72 @@ To enable the Leaflet based Client:
 if GEONODE_CLIENT_LAYER_PREVIEW_LIBRARY == 'leaflet':
     GEONODE_CLIENT_HOOKSET = os.getenv('GEONODE_CLIENT_HOOKSET', 'geonode.client.hooksets.LeafletHookSet')
 
-    LEAFLET_CONFIG = {
-        'TILES': [
-            # Find tiles at:
-            # http://leaflet-extras.github.io/leaflet-providers/preview/
-
-            # Stamen toner lite.
-            ('Watercolor',
-             'http://{s}.tile.stamen.com/watercolor/{z}/{x}/{y}.png',
-             'Map tiles by <a href="http://stamen.com">Stamen Design</a>, \
-             <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> \
-             &mdash; Map data &copy; \
-             <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, \
-             <a href="http://creativecommons.org/licenses/by-sa/2.0/"> \
-             CC-BY-SA</a>'),
-            ('Toner Lite',
-             'http://{s}.tile.stamen.com/toner-lite/{z}/{x}/{y}.png',
-             'Map tiles by <a href="http://stamen.com">Stamen Design</a>, \
-             <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> \
-             &mdash; Map data &copy; \
-             <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, \
-             <a href="http://creativecommons.org/licenses/by-sa/2.0/"> \
-             CC-BY-SA</a>'),
-        ],
-        'PLUGINS': {
-            'esri-leaflet': {
-                'js': 'lib/js/esri-leaflet.js',
-                'auto-include': True,
-            },
-            'leaflet-fullscreen': {
-                'css': 'lib/css/leaflet.fullscreen.css',
-                'js': 'lib/js/Leaflet.fullscreen.min.js',
-                'auto-include': True,
-            },
-            'leaflet-opacity': {
-                'css': 'lib/css/Control.Opacity.css',
-                'js': 'lib/js/Control.Opacity.js',
-                'auto-include': True,
-            },
-            'leaflet-navbar': {
-                'css': 'lib/css/Leaflet.NavBar.css',
-                'js': 'lib/js/Leaflet.NavBar.js',
-                'auto-include': True,
-            },
-            'leaflet-measure': {
-                'css': 'lib/css/leaflet-measure.css',
-                'js': 'lib/js/leaflet-measure.js',
-                'auto-include': True,
-            },
-        },
-        'SRID': 3857,
-        'RESET_VIEW': False
-    }
-
-    if not DEBUG_STATIC:
-        # if not DEBUG_STATIC, use minified css and js
-        LEAFLET_CONFIG['PLUGINS'] = {
-            'leaflet-plugins': {
-                'js': 'lib/js/leaflet-plugins.min.js',
-                'css': 'lib/css/leaflet-plugins.min.css',
-                'auto-include': True,
-            }
-        }
-
     CORS_ORIGIN_WHITELIST = (
         HOSTNAME
     )
+
+LEAFLET_CONFIG = {
+    'TILES': [
+        # Find tiles at:
+        # http://leaflet-extras.github.io/leaflet-providers/preview/
+
+        # Stamen toner lite.
+        ('Watercolor',
+            'http://{s}.tile.stamen.com/watercolor/{z}/{x}/{y}.png',
+            'Map tiles by <a href="http://stamen.com">Stamen Design</a>, \
+            <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> \
+            &mdash; Map data &copy; \
+            <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, \
+            <a href="http://creativecommons.org/licenses/by-sa/2.0/"> \
+            CC-BY-SA</a>'),
+        ('Toner Lite',
+            'http://{s}.tile.stamen.com/toner-lite/{z}/{x}/{y}.png',
+            'Map tiles by <a href="http://stamen.com">Stamen Design</a>, \
+            <a href="http://creativecommons.org/licenses/by/3.0">CC BY 3.0</a> \
+            &mdash; Map data &copy; \
+            <a href="http://openstreetmap.org">OpenStreetMap</a> contributors, \
+            <a href="http://creativecommons.org/licenses/by-sa/2.0/"> \
+            CC-BY-SA</a>'),
+    ],
+    'PLUGINS': {
+        'esri-leaflet': {
+            'js': 'lib/js/esri-leaflet.js',
+            'auto-include': True,
+        },
+        'leaflet-fullscreen': {
+            'css': 'lib/css/leaflet.fullscreen.css',
+            'js': 'lib/js/Leaflet.fullscreen.min.js',
+            'auto-include': True,
+        },
+        'leaflet-opacity': {
+            'css': 'lib/css/Control.Opacity.css',
+            'js': 'lib/js/Control.Opacity.js',
+            'auto-include': True,
+        },
+        'leaflet-navbar': {
+            'css': 'lib/css/Leaflet.NavBar.css',
+            'js': 'lib/js/Leaflet.NavBar.js',
+            'auto-include': True,
+        },
+        'leaflet-measure': {
+            'css': 'lib/css/leaflet-measure.css',
+            'js': 'lib/js/leaflet-measure.js',
+            'auto-include': True,
+        },
+    },
+    'SRID': 3857,
+    'RESET_VIEW': False
+}
+
+if not DEBUG_STATIC:
+    # if not DEBUG_STATIC, use minified css and js
+    LEAFLET_CONFIG['PLUGINS'] = {
+        'leaflet-plugins': {
+            'js': 'lib/js/leaflet-plugins.min.js',
+            'css': 'lib/css/leaflet-plugins.min.css',
+            'auto-include': True,
+        }
+    }
 
 """
 To enable the MapStore2 REACT based Client:
@@ -1561,10 +1628,14 @@ LOCAL_SIGNALS_BROKER_URL = 'memory://'
 if ASYNC_SIGNALS:
     _BROKER_URL = os.environ.get('BROKER_URL', RABBITMQ_SIGNALS_BROKER_URL)
     # _BROKER_URL =  = os.environ.get('BROKER_URL', REDIS_SIGNALS_BROKER_URL)
-
     CELERY_RESULT_BACKEND = _BROKER_URL
 else:
     _BROKER_URL = LOCAL_SIGNALS_BROKER_URL
+    CELERY_RESULT_BACKEND_PATH = os.getenv(
+        'CELERY_RESULT_BACKEND_PATH', os.path.join(PROJECT_ROOT, '.celery_results'))
+    if not os.path.exists(CELERY_RESULT_BACKEND_PATH):
+        os.makedirs(CELERY_RESULT_BACKEND_PATH)
+    CELERY_RESULT_BACKEND = 'file:///%s' % CELERY_RESULT_BACKEND_PATH
 
 # Note:BROKER_URL is deprecated in favour of CELERY_BROKER_URL
 CELERY_BROKER_URL = _BROKER_URL
@@ -1576,6 +1647,7 @@ CELERY_ACKS_LATE = True
 
 # Set this to False in order to run async
 CELERY_TASK_ALWAYS_EAGER = False if ASYNC_SIGNALS else True
+CELERY_TASK_EAGER_PROPAGATES = False if ASYNC_SIGNALS else True
 CELERY_TASK_IGNORE_RESULT = True
 
 # I use these to debug kombu crashes; we get a more informative message.
@@ -1724,8 +1796,6 @@ THESAURI = []
 
 # Each uploaded Layer must be approved by an Admin before becoming visible
 ADMIN_MODERATE_UPLOADS = ast.literal_eval(os.environ.get('ADMIN_MODERATE_UPLOADS', 'False'))
-
-GEOIP_PATH = os.getenv('GEOIP_PATH', os.path.join(PROJECT_ROOT, 'GeoIPCities.dat'))
 
 # If this option is enabled, Resources belonging to a Group won't be
 # visible by others

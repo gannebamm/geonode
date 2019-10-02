@@ -24,6 +24,7 @@ import logging
 from django.conf import settings
 from django.db.models import signals
 from lxml import etree
+from defusedxml import lxml as dlxml
 from geonode.layers.models import Layer
 from geonode.documents.models import Document
 from geonode.catalogue import get_catalogue
@@ -75,17 +76,27 @@ def catalogue_post_save(instance, sender, **kwargs):
 
         # Create the different metadata links with the available formats
         for mime, name, metadata_url in record.links['metadata']:
-            Link.objects.get_or_create(resource=instance.resourcebase_ptr,
-                                       url=metadata_url,
-                                       defaults=dict(name=name,
-                                                     extension='xml',
-                                                     mime=mime,
-                                                     link_type='metadata')
-                                       )
+            try:
+                Link.objects.get_or_create(resource=instance.resourcebase_ptr,
+                                           url=metadata_url,
+                                           defaults=dict(name=name,
+                                                         extension='xml',
+                                                         mime=mime,
+                                                         link_type='metadata')
+                                           )
+            except Link.MultipleObjectsReturned:
+                _d = dict(name=name,
+                          extension='xml',
+                          mime=mime,
+                          link_type='metadata')
+                Link.objects.filter(resource=instance.resourcebase_ptr,
+                                    url=metadata_url,
+                                    extension='xml',
+                                    link_type='metadata').update(**_d)
 
         # generate an XML document (GeoNode's default is ISO)
         if instance.metadata_uploaded and instance.metadata_uploaded_preserve:
-            md_doc = etree.tostring(etree.fromstring(instance.metadata_xml))
+            md_doc = etree.tostring(dlxml.fromstring(instance.metadata_xml))
         else:
             md_doc = catalogue.catalogue.csw_gen_xml(instance, 'catalogue/full_metadata.xml')
 

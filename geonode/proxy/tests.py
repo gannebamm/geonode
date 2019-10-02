@@ -33,6 +33,8 @@ from geonode.base.populate_test_data import create_models
 from django.contrib.auth import get_user_model
 from django.test.utils import override_settings
 
+from mock import MagicMock
+
 
 TEST_DOMAIN = '.github.com'
 TEST_URL = 'https://help%s/' % TEST_DOMAIN
@@ -75,6 +77,45 @@ class ProxyTest(GeoNodeBaseTestSupport):
         # 404 - NOT FOUND
         if response.status_code != 404:
             self.assertTrue(response.status_code in (200, 301))
+
+    @override_settings(DEBUG=False, PROXY_ALLOWED_HOSTS=())
+    def test_validate_remote_services_hosts(self):
+        """If PROXY_ALLOWED_HOSTS is empty and DEBUG is False requests should return 200
+        for Remote Services hosts."""
+        from geonode.services.models import Service
+        from geonode.services.enumerations import WMS, INDEXED
+        Service.objects.get_or_create(
+            type=WMS,
+            name='Bogus',
+            title='Pocus',
+            owner=self.admin,
+            method=INDEXED,
+            base_url='http://bogus.pocus.com/ows')
+        response = self.client.get(
+            '%s?url=%s' % (self.proxy_url, 'http://bogus.pocus.com/ows/wms?request=GetCapabilities'))
+        # 200 - FOUND
+        self.assertTrue(response.status_code in (200, 301))
+
+    @override_settings(DEBUG=False, PROXY_ALLOWED_HOSTS=('.example.org',))
+    def test_relative_urls(self):
+        """Proxying to a URL with a relative path element should normalise the path into
+        an absolute path before calling the remote URL."""
+        import geonode.proxy.views
+
+        class Response(object):
+            status_code = 200
+            content = 'Hello World'
+            headers = {'Content-Type': 'text/html'}
+
+        request_mock = MagicMock()
+        request_mock.return_value = (Response(), None)
+
+        geonode.proxy.views.http_client.request = request_mock
+        url = "http://example.org/test/test/../../index.html"
+
+        self.client.get('%s?url=%s' % (self.proxy_url, url))
+        assert request_mock.assert_called_once
+        assert request_mock.call_args[0][0] == 'http://example.org/index.html'
 
 
 class OWSApiTestCase(GeoNodeBaseTestSupport):

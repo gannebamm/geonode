@@ -19,9 +19,7 @@
 #########################################################################
 
 import os
-import re
 import pytz
-import types
 import Queue
 import logging
 import xmljson
@@ -33,38 +31,18 @@ from math import floor, ceil
 from urllib import urlencode
 from urlparse import urlsplit
 from bs4 import BeautifulSoup as bs
-from requests.auth import HTTPBasicAuth
 from datetime import datetime, timedelta
-from xml.etree import ElementTree as etree
+from defusedxml import lxml as dlxml
 
 from django.conf import settings
 from django.db.models.fields.related import RelatedField
 
-from geonode.monitoring.models import RequestEvent, ExceptionEvent
+from geonode.settings import DATETIME_INPUT_FORMATS
 
 
 GS_FORMAT = '%Y-%m-%dT%H:%M:%S'  # 2010-06-20T2:00:00
 
 log = logging.getLogger(__name__)
-
-
-class MonitoringFilter(logging.Filter):
-
-    def __init__(self, service, skip_urls=tuple(), *args, **kwargs):
-        super(MonitoringFilter, self).__init__(*args, **kwargs)
-        self.service = service
-        self.skip_urls = skip_urls
-
-    def filter(self, record):
-        fp = record.request.get_full_path()
-        for skip_url in self.skip_urls:
-            if isinstance(skip_url, types.StringTypes):
-                if fp.startswith(skip_url):
-                    return False
-            elif isinstance(skip_url, re.RegexObject):
-                if skip_url.match(fp):
-                    return False
-        return record
 
 
 class MonitoringHandler(logging.Handler):
@@ -74,6 +52,8 @@ class MonitoringHandler(logging.Handler):
         self.service = service
 
     def emit(self, record):
+        from geonode.monitoring.models import RequestEvent, ExceptionEvent
+
         exc_info = record.exc_info
         req = record.request
         resp = record.response
@@ -102,6 +82,8 @@ class RequestToMonitoringThread(threading.Thread):
         RequestToMonitoringThread.q.put(item)
 
     def run(self):
+        from geonode.monitoring.models import RequestEvent
+
         q = RequestToMonitoringThread.q
         while True:
             if not q.empty():
@@ -134,6 +116,8 @@ class GeoServerMonitorClient(object):
         """
         Returns list of requests from monitoring
         """
+        from requests.auth import HTTPBasicAuth
+
         rest_url = '{}rest/monitor/requests.html'.format(self.base_url)
         qargs = {}
         if since:
@@ -151,7 +135,8 @@ class GeoServerMonitorClient(object):
         resp = requests.get(
             rest_url,
             auth=HTTPBasicAuth(username, password),
-            timeout=30)
+            timeout=30,
+            verify=False)
         doc = bs(resp.content, features="lxml")
         links = doc.find_all('a')
         for l in links:
@@ -160,16 +145,19 @@ class GeoServerMonitorClient(object):
             if data:
                 yield data
             else:
-                log.href("Skipping payload for {}".format(href))
+                log.warning("Skipping payload for {}".format(href))
 
     def get_request(self, href, format=format):
+        from requests.auth import HTTPBasicAuth
+
         username = settings.OGC_SERVER['default']['USER']
         password = settings.OGC_SERVER['default']['PASSWORD']
         log.debug(" href: %s " % href)
         r = requests.get(
             href,
             auth=HTTPBasicAuth(username, password),
-            timeout=30)
+            timeout=30,
+            verify=False)
         if r.status_code != 200:
             log.warning('Invalid response for %s: %s', href, r)
             return
@@ -179,11 +167,11 @@ class GeoServerMonitorClient(object):
         except (ValueError, TypeError,):
             # traceback.print_exc()
             try:
-                data = etree.fromstring(r.content)
+                data = dlxml.fromstring(r.content)
             except Exception as err:
                 log.debug("Cannot parse xml contents for %s: %s", href, err, exc_info=err)
                 data = bs(r.content)
-        if data and format != 'json':
+        if len(data) and format != 'json':
             return self.to_json(data, format)
         return data
 
@@ -199,7 +187,7 @@ class GeoServerMonitorClient(object):
 
     def to_json(self, data, from_format):
         h = getattr(self, '_from_{}'.format(from_format), None)
-        if not h or not data:
+        if not h or not len(data):
             raise ValueError(
                 "Cannot convert from {} - no handler".format(from_format))
         return h(data)
@@ -238,7 +226,7 @@ def align_period_start(start, interval):
 def generate_periods(since, interval, end=None, align=True):
     """
     Generator of periods: tuple of [start, end).
-    since parameter will be aligned to closest interval before since.1
+    since parameter will be aligned to closest interval before since.
     """
     utc = pytz.utc
     end = end or datetime.utcnow().replace(tzinfo=utc)
@@ -246,7 +234,8 @@ def generate_periods(since, interval, end=None, align=True):
         since_aligned = align_period_start(since, interval)
     else:
         since_aligned = since
-
+    if end < since:
+        raise ValueError("End cannot be earlienr than beginning")
     full_interval = (end - since).total_seconds()
     _periods = divmod(full_interval, interval.total_seconds())
     periods_count = _periods[0]
@@ -338,12 +327,30 @@ class TypeChecks(object):
         raise ValueError("Invalid label value: {}".format(val))
 
     @staticmethod
-    def ows_service_type(val):
-        from geonode.monitoring.models import OWSService
+    def user_type(val):
+        from geonode.monitoring.models import MetricLabel
         try:
-            return OWSService.objects.get(name=val)
-        except OWSService.DoesNotExist:
-            raise ValueError("OWS Service {} doesn't exist".format(val))
+            if MetricLabel.objects.filter(user=val).count():
+                return val
+        except MetricLabel.DoesNotExist:
+            raise ValueError("Invalid user value: {}".format(val))
+
+    @staticmethod
+    def event_type_type(val):
+        from geonode.monitoring.models import EventType
+        try:
+            return EventType.objects.get(name=val)
+        except EventType.DoesNotExist:
+            raise ValueError("Event Type {} doesn't exist".format(val))
+
+    @staticmethod
+    def ows_service_type(val):
+        if str(val).lower() in ("true", "1"):
+            return True
+        elif str(val).lower() in ("false", "0"):
+            return False
+        else:
+            raise ValueError("Invalid ows_service value {}".format(val))
 
 
 def dump(obj, additional_fields=tuple()):
@@ -373,3 +380,19 @@ def dump(obj, additional_fields=tuple()):
                    'seconds': val.total_seconds()}
         out[fname] = val
     return out
+
+
+def extend_datetime_input_formats(formats):
+    """
+    Add new DateTime input formats
+    :param formats: input formats yoy want to add (tuple or list)
+    :return: extended input formats
+    """
+    input_formats = DATETIME_INPUT_FORMATS
+    if isinstance(input_formats, tuple):
+        input_formats += tuple(formats)
+    elif isinstance(input_formats, list):
+        input_formats.extend(formats)
+    else:
+        raise ValueError("Input parameter must be tuple or list.")
+    return input_formats
