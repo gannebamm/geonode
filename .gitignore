@@ -24,6 +24,8 @@ geonode/static/.components/
 geonode/static_root/
 geonode/static/node_modules/
 node_modules/
+# Exception for monitoring frontend
+!geonode/monitoring/static/monitoring/node_modules/
 # Listing all of them instead of putting geonode/static/lib out of version control.
 geonode/local_settings.py
 
@@ -90,3 +92,7 @@ scripts/spcgeonode/_volume_*
 /geonode/test_settings.py
 
 /geonode/static/yarn.lock
+
+/geonode/development.db-journal
+
+/output.bin

@@ -20,7 +20,10 @@
 
 import os
 # import sys
-from urlparse import urlparse
+try:
+    from urllib.parse import urlparse
+except ImportError:
+    from urlparse import urlparse
 
 import django
 import pytest
@@ -77,7 +80,7 @@ def bdd_server(request, live_server):
 def geonode_db_setup(django_db_setup, django_db_blocker):
     with django_db_blocker.unblock():
         call_command('loaddata', 'initial_data.json')
-        call_command('loaddata', 'group_test_data.json')
+        call_command('loaddata', 'profiles_test_data.json')
         call_command('loaddata', 'default_oauth_apps.json')
 
 

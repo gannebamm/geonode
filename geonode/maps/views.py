@@ -20,14 +20,22 @@
 
 import math
 import logging
-import urlparse
+import six
+try:
+    from urllib.parse import quote, urlsplit
+except ImportError:
+    # Python 2 compatibility
+    from urllib import quote
+    from urlparse import urlsplit
+import traceback
 from itertools import chain
+from six import string_types
 
 from guardian.shortcuts import get_perms
 
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ObjectDoesNotExist
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.shortcuts import redirect
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpResponse, HttpResponseRedirect, HttpResponseNotAllowed, HttpResponseServerError, Http404
@@ -36,12 +44,7 @@ from django.conf import settings
 from django.utils.translation import ugettext as _
 from django.views.decorators.http import require_http_methods
 
-try:
-    # Django >= 1.7
-    import json
-except ImportError:
-    # Django <= 1.6 backwards compatibility
-    from django.utils import simplejson as json
+import json
 from django.utils.html import strip_tags
 from django.db.models import F
 from django.views.decorators.clickjacking import (xframe_options_exempt,
@@ -63,8 +66,10 @@ from geonode.utils import (DEFAULT_TITLE,
                            check_ogc_backend)
 from geonode.maps.forms import MapForm
 from geonode.security.views import _perms_info_json
-from geonode.base.forms import CategoryForm
-from geonode.base.models import TopicCategory
+from geonode.base.forms import CategoryForm, TKeywordForm
+from geonode.base.models import (
+    Thesaurus,
+    TopicCategory)
 from geonode import geoserver, qgis_server
 from geonode.groups.models import GroupProfile
 from geonode.documents.models import get_related_documents
@@ -75,6 +80,8 @@ from geonode.monitoring import register_event
 from geonode.monitoring.models import EventType
 from requests.compat import urljoin
 from deprecated import deprecated
+
+from dal import autocomplete
 
 if check_ogc_backend(geoserver.BACKEND_PACKAGE):
     # FIXME: The post service providing the map_status object
@@ -173,7 +180,7 @@ def map_detail(request, mapid, snapshot=None, template='maps/map_detail.html'):
     if settings.SOCIAL_ORIGINS:
         context_dict["social_links"] = build_social_links(request, map_obj)
 
-    if request.user.is_authenticated():
+    if request.user.is_authenticated:
         if getattr(settings, 'FAVORITE_ENABLED', False):
             from geonode.favorite.utils import get_favorite_info
             context_dict["favorite_info"] = get_favorite_info(request.user, map_obj)
@@ -206,11 +213,37 @@ def map_metadata(
         category_form = CategoryForm(request.POST, prefix="category_choice_field", initial=int(
             request.POST["category_choice_field"]) if "category_choice_field" in request.POST and
             request.POST["category_choice_field"] else None)
+        tkeywords_form = TKeywordForm(request.POST)
     else:
         map_form = MapForm(instance=map_obj, prefix="resource")
         category_form = CategoryForm(
             prefix="category_choice_field",
             initial=topic_category.id if topic_category else None)
+
+        # Keywords from THESAURUS management
+        map_tkeywords = map_obj.tkeywords.all()
+        tkeywords_list = ''
+        lang = 'en'  # TODO: use user's language
+        if map_tkeywords and len(map_tkeywords) > 0:
+            tkeywords_ids = map_tkeywords.values_list('id', flat=True)
+            if hasattr(settings, 'THESAURUS') and settings.THESAURUS:
+                el = settings.THESAURUS
+                thesaurus_name = el['name']
+                try:
+                    t = Thesaurus.objects.get(identifier=thesaurus_name)
+                    for tk in t.thesaurus.filter(pk__in=tkeywords_ids):
+                        tkl = tk.keyword.filter(lang=lang)
+                        if len(tkl) > 0:
+                            tkl_ids = ",".join(
+                                map(str, tkl.values_list('id', flat=True)))
+                            tkeywords_list += "," + \
+                                tkl_ids if len(
+                                    tkeywords_list) > 0 else tkl_ids
+                except BaseException:
+                    tb = traceback.format_exc()
+                    logger.error(tb)
+
+        tkeywords_form = TKeywordForm(instance=map_obj)
 
     if request.method == "POST" and map_form.is_valid(
     ) and category_form.is_valid():
@@ -223,7 +256,7 @@ def map_metadata(
 
         new_category = None
         if category_form and 'category_choice_field' in category_form.cleaned_data and\
-        category_form.cleaned_data['category_choice_field']:
+                category_form.cleaned_data['category_choice_field']:
             new_category = TopicCategory.objects.get(
                 id=int(category_form.cleaned_data['category_choice_field']))
 
@@ -252,12 +285,10 @@ def map_metadata(
             map_obj.metadata_author = new_author
         map_obj.title = new_title
         map_obj.abstract = new_abstract
-        if new_keywords:
-            map_obj.keywords.clear()
-            map_obj.keywords.add(*new_keywords)
-        if new_regions:
-            map_obj.regions.clear()
-            map_obj.regions.add(*new_regions)
+        map_obj.keywords.clear()
+        map_obj.keywords.add(*new_keywords)
+        map_obj.regions.clear()
+        map_obj.regions.add(*new_regions)
         map_obj.category = new_category
         map_obj.save()
 
@@ -271,6 +302,24 @@ def map_metadata(
                     )))
 
         message = map_obj.id
+
+        try:
+            # Keywords from THESAURUS management
+            # Rewritten to work with updated autocomplete
+            if not tkeywords_form.is_valid():
+                return HttpResponse(json.dumps({'message': "Invalid thesaurus keywords"}, status_code=400))
+
+            tkeywords_data = tkeywords_form.cleaned_data['tkeywords']
+
+            thesaurus_setting = getattr(settings, 'THESAURUS', None)
+            if thesaurus_setting:
+                tkeywords_data = tkeywords_data.filter(
+                    thesaurus__identifier=thesaurus_setting['name']
+                )
+                map_obj.tkeywords = tkeywords_data
+        except BaseException:
+            tb = traceback.format_exc()
+            logger.error(tb)
 
         return HttpResponse(json.dumps({'message': message}))
 
@@ -342,6 +391,7 @@ def map_metadata(
         "poc_form": poc_form,
         "author_form": author_form,
         "category_form": category_form,
+        "tkeywords_form": tkeywords_form,
         "layers": layers,
         "preview": getattr(settings, 'GEONODE_CLIENT_LAYER_PREVIEW_LIBRARY', 'geoext'),
         "crs": getattr(settings, 'DEFAULT_MAP_CRS', 'EPSG:3857'),
@@ -584,7 +634,7 @@ def map_json(request, mapid, snapshot=None):
             json.dumps(
                 map_obj.viewer_json(request)))
     elif request.method == 'PUT':
-        if not request.user.is_authenticated():
+        if not request.user.is_authenticated:
             return HttpResponse(
                 _PERMISSION_MSG_LOGIN,
                 status=401,
@@ -653,7 +703,7 @@ def map_edit(request, mapid, snapshot=None, template='maps/map_edit.html'):
 
 
 def clean_config(conf):
-    if isinstance(conf, basestring):
+    if isinstance(conf, string_types):
         config = json.loads(conf)
         config_extras = [
             "tools",
@@ -701,7 +751,7 @@ def new_map_json(request):
         else:
             return HttpResponse(config)
     elif request.method == 'POST':
-        if not request.user.is_authenticated():
+        if not request.user.is_authenticated:
             return HttpResponse(
                 'You must be logged in to save new maps',
                 content_type="text/plain",
@@ -759,7 +809,7 @@ def new_map_config(request):
 
         map_obj.abstract = DEFAULT_ABSTRACT
         map_obj.title = DEFAULT_TITLE
-        if request.user.is_authenticated():
+        if request.user.is_authenticated:
             map_obj.owner = request.user
 
         config = map_obj.viewer_json(request)
@@ -824,7 +874,6 @@ def add_layers_to_map_config(
             return [_bbox[0], _bbox[2], _bbox[1], _bbox[3]]
 
         def sld_definition(style):
-            from urllib import quote
             _sld = {
                 "title": style.sld_title or style.name,
                 "legend": {
@@ -863,6 +912,7 @@ def add_layers_to_map_config(
                                target_srid=int(srs.split(":")[1]))[:4])
         config["capability"] = {
             "abstract": layer.abstract,
+            "store": layer.store,
             "name": layer.alternate,
             "title": layer.title,
             "queryable": True,
@@ -919,45 +969,45 @@ def add_layers_to_map_config(
 
         all_times = None
         if check_ogc_backend(geoserver.BACKEND_PACKAGE):
-            from geonode.geoserver.views import get_capabilities
-            workspace, layername = layer.alternate.split(
-                ":") if ":" in layer.alternate else (None, layer.alternate)
-            # WARNING Please make sure to have enabled DJANGO CACHE as per
-            # https://docs.djangoproject.com/en/2.0/topics/cache/#filesystem-caching
-            wms_capabilities_resp = get_capabilities(
-                request, layer.id, tolerant=True)
-            if wms_capabilities_resp.status_code >= 200 and wms_capabilities_resp.status_code < 400:
-                wms_capabilities = wms_capabilities_resp.getvalue()
-                if wms_capabilities:
-                    from defusedxml import lxml as dlxml
-                    namespaces = {'wms': 'http://www.opengis.net/wms',
-                                  'xlink': 'http://www.w3.org/1999/xlink',
-                                  'xsi': 'http://www.w3.org/2001/XMLSchema-instance'}
-
-                    e = dlxml.fromstring(wms_capabilities)
-                    for atype in e.findall(
-                            "./[wms:Name='%s']/wms:Dimension[@name='time']" % (layer.alternate), namespaces):
-                        dim_name = atype.get('name')
-                        if dim_name:
-                            dim_name = str(dim_name).lower()
-                            if dim_name == 'time':
-                                dim_values = atype.text
-                                if dim_values:
-                                    all_times = dim_values.split(",")
-                                    break
-            if all_times:
-                config["capability"]["dimensions"] = {
-                    "time": {
-                        "name": "time",
-                        "units": "ISO8601",
-                        "unitsymbol": None,
-                        "nearestVal": False,
-                        "multipleVal": False,
-                        "current": False,
-                        "default": "current",
-                        "values": all_times
+            if layer.has_time:
+                from geonode.geoserver.views import get_capabilities
+                workspace, layername = layer.alternate.split(
+                    ":") if ":" in layer.alternate else (None, layer.alternate)
+                # WARNING Please make sure to have enabled DJANGO CACHE as per
+                # https://docs.djangoproject.com/en/2.0/topics/cache/#filesystem-caching
+                wms_capabilities_resp = get_capabilities(
+                    request, layer.id, tolerant=True)
+                if wms_capabilities_resp.status_code >= 200 and wms_capabilities_resp.status_code < 400:
+                    wms_capabilities = wms_capabilities_resp.getvalue()
+                    if wms_capabilities:
+                        from defusedxml import lxml as dlxml
+                        namespaces = {'wms': 'http://www.opengis.net/wms',
+                                      'xlink': 'http://www.w3.org/1999/xlink',
+                                      'xsi': 'http://www.w3.org/2001/XMLSchema-instance'}
+                        e = dlxml.fromstring(wms_capabilities)
+                        for atype in e.findall(
+                                "./[wms:Name='%s']/wms:Dimension[@name='time']" % (layer.alternate), namespaces):
+                            dim_name = atype.get('name')
+                            if dim_name:
+                                dim_name = str(dim_name).lower()
+                                if dim_name == 'time':
+                                    dim_values = atype.text
+                                    if dim_values:
+                                        all_times = dim_values.split(",")
+                                        break
+                if all_times:
+                    config["capability"]["dimensions"] = {
+                        "time": {
+                            "name": "time",
+                            "units": "ISO8601",
+                            "unitsymbol": None,
+                            "nearestVal": False,
+                            "multipleVal": False,
+                            "current": False,
+                            "default": "current",
+                            "values": all_times
+                        }
                     }
-                }
 
         if layer.storeType == "remoteStore":
             service = layer.remote_service
@@ -977,9 +1027,9 @@ def add_layers_to_map_config(
                                 source_params=json.dumps(source_params)
                                 )
         else:
-            ogc_server_url = urlparse.urlsplit(
+            ogc_server_url = urlsplit(
                 ogc_server_settings.PUBLIC_LOCATION).netloc
-            layer_url = urlparse.urlsplit(layer.ows_url).netloc
+            layer_url = urlsplit(layer.ows_url).netloc
 
             access_token = request.session['access_token'] if request and 'access_token' in request.session else None
             if access_token and ogc_server_url == layer_url and 'access_token' not in layer.ows_url:
@@ -1207,7 +1257,7 @@ def snapshot_config(snapshot, map_obj, request):
 
     # Match up the layer with it's source
     def snapsource_lookup(source, sources):
-        for k, v in sources.iteritems():
+        for k, v in sources.items():
             if v.get("id") == source.get("id"):
                 return k
         return None
@@ -1299,7 +1349,7 @@ def snapshot_create(request):
     """
     conf = request.body
 
-    if isinstance(conf, basestring):
+    if isinstance(conf, string_types):
         config = json.loads(conf)
         snapshot = MapSnapshot.objects.create(
             config=clean_config(conf),
@@ -1405,3 +1455,23 @@ def map_metadata_detail(
 @login_required
 def map_batch_metadata(request, ids):
     return batch_modify(request, ids, 'Map')
+
+
+class MapAutocomplete(autocomplete.Select2QuerySetView):
+
+    # Overriding both result label methods to ensure autocomplete labels display without ' by user' suffix
+    def get_selected_result_label(self, result):
+        """Return the label of a selected result."""
+        return self.get_result_label(result)
+
+    def get_result_label(self, result):
+        """Return the label of a selected result."""
+        return six.text_type(result.title)
+
+    def get_queryset(self):
+        qs = Map.objects.all()
+
+        if self.q:
+            qs = qs.filter(title__icontains=self.q).order_by('title')[:100]
+
+        return qs

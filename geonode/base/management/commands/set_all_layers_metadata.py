@@ -19,22 +19,25 @@
 #########################################################################
 
 from django.core.management.base import BaseCommand
-from geonode.base.models import Link
-from geonode.layers.models import Layer
-from geonode.catalogue.models import catalogue_post_save
 
+from geonode.layers.models import Layer
 from geonode import geoserver, qgis_server  # noqa
-from geonode.utils import check_ogc_backend, set_resource_default_links
+from geonode.catalogue.models import catalogue_post_save
+from geonode.geoserver.helpers import ogc_server_settings
+
+from geonode.utils import (
+    check_ogc_backend,
+    set_resource_default_links
+)
+from geonode.base.utils import (
+    delete_orphaned_thumbs,
+    remove_duplicate_links
+)
 
 if check_ogc_backend(geoserver.BACKEND_PACKAGE):
     from geonode.geoserver.helpers import set_attributes_from_geoserver as set_attributes
 elif check_ogc_backend(qgis_server.BACKEND_PACKAGE):
     from geonode.qgis_server.gis_tools import set_attributes
-
-_names = ['Zipped Shapefile', 'Zipped', 'Shapefile', 'GML 2.0', 'GML 3.1.1', 'CSV',
-          'GeoJSON', 'Excel', 'Legend', 'GeoTIFF', 'GZIP', 'Original Dataset',
-          'ESRI Shapefile', 'View in Google Earth', 'KML', 'KMZ', 'Atom', 'DIF',
-          'Dublin Core', 'ebRIM', 'FGDC', 'ISO', 'ISO with XSL']
 
 
 class Command(BaseCommand):
@@ -58,6 +61,14 @@ class Command(BaseCommand):
             help='Remove duplicates first.'
         )
         parser.add_argument(
+            '-t',
+            '--delete-orphaned-thumbs',
+            action='store_true',
+            dest='delete_orphaned_thumbnails',
+            default=False,
+            help='Delete Orphaned Thumbnails.'
+        )
+        parser.add_argument(
             '-f',
             '--filter',
             dest="filter",
@@ -73,6 +84,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         ignore_errors = options.get('ignore_errors')
         remove_duplicates = options.get('remove_duplicates')
+        delete_orphaned_thumbnails = options.get('delete_orphaned_thumbnails')
         filter = options.get('filter')
         if not options.get('username'):
             username = None
@@ -86,7 +98,7 @@ class Command(BaseCommand):
             all_layers = all_layers.filter(owner__username=username)
 
         for index, layer in enumerate(all_layers):
-            print "[%s / %s] Updating Layer [%s] ..." % ((index + 1), len(all_layers), layer.name)
+            print("[%s / %s] Updating Layer [%s] ..." % ((index + 1), len(all_layers), layer.name))
             try:
                 # recalculate the layer statistics
                 set_attributes(layer, overwrite=True)
@@ -97,17 +109,17 @@ class Command(BaseCommand):
                 # refresh catalogue metadata records
                 catalogue_post_save(instance=layer, sender=layer.__class__)
 
+                # remove duplicates
                 if remove_duplicates:
-                    # remove duplicates
-                    for _n in _names:
-                        _links = Link.objects.filter(resource__id=layer.id, name=_n)
-                        while _links.count() > 1:
-                            _links.last().delete()
-                            print '.',
+                    remove_duplicate_links(layer)
             except BaseException as e:
                 import traceback
                 traceback.print_exc()
                 if ignore_errors:
-                    print "[ERROR] Layer [%s] couldn't be updated" % (layer.name)
+                    print("[ERROR] Layer [%s] couldn't be updated" % (layer.name))
                 else:
                     raise e
+
+        # delete orphaned thumbs
+        if delete_orphaned_thumbnails:
+            delete_orphaned_thumbs()

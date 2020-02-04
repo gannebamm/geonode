@@ -21,9 +21,10 @@
 import os
 import json
 import logging
+import traceback
 from itertools import chain
 
-from guardian.shortcuts import get_perms
+from guardian.shortcuts import get_perms, get_objects_for_user
 
 from django.shortcuts import render, get_object_or_404
 from django.http import HttpResponse, HttpResponseRedirect, Http404
@@ -31,8 +32,8 @@ from django.template import loader
 from django.utils.translation import ugettext as _
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
-from django.core.urlresolvers import reverse
-from django.core.exceptions import PermissionDenied
+from django.urls import reverse
+from django.core.exceptions import PermissionDenied, ObjectDoesNotExist
 from django.core.files.storage import default_storage
 from django.core.files.base import ContentFile
 from django_downloadview.response import DownloadResponse
@@ -43,8 +44,10 @@ from django.forms.utils import ErrorList
 from geonode.utils import resolve_object
 from geonode.security.views import _perms_info_json
 from geonode.people.forms import ProfileForm
-from geonode.base.forms import CategoryForm
-from geonode.base.models import TopicCategory
+from geonode.base.forms import CategoryForm, TKeywordForm
+from geonode.base.models import (
+    Thesaurus,
+    TopicCategory)
 from geonode.documents.models import Document, get_related_resources
 from geonode.documents.forms import DocumentForm, DocumentCreateForm, DocumentReplaceForm
 from geonode.documents.models import IMGTYPES
@@ -54,6 +57,9 @@ from geonode.groups.models import GroupProfile
 from geonode.base.views import batch_modify
 from geonode.monitoring import register_event
 from geonode.monitoring.models import EventType
+from geonode.security.utils import get_visible_resources
+
+from dal import autocomplete
 
 logger = logging.getLogger("geonode.documents.views")
 
@@ -124,7 +130,7 @@ def document_detail(request, docid):
         if document.group:
             try:
                 group = GroupProfile.objects.get(slug=document.group.name)
-            except GroupProfile.DoesNotExist:
+            except ObjectDoesNotExist:
                 group = None
         context_dict = {
             'perms_list': get_perms(
@@ -148,9 +154,9 @@ def document_detail(request, docid):
                 if exif:
                     context_dict['exif_data'] = exif
             except BaseException:
-                print "Exif extraction failed."
+                logger.error("Exif extraction failed.")
 
-        if request.user.is_authenticated():
+        if request.user.is_authenticated:
             if getattr(settings, 'FAVORITE_ENABLED', False):
                 from geonode.favorite.utils import get_favorite_info
                 context_dict["favorite_info"] = get_favorite_info(request.user, document)
@@ -238,7 +244,7 @@ class DocumentUploadView(CreateView):
                     bbox = exif_metadata.get('bbox', None)
                     abstract = exif_metadata.get('abstract', None)
             except BaseException:
-                print "Exif extraction failed."
+                logger.error("Exif extraction failed.")
 
         if abstract:
             self.object.abstract = abstract
@@ -270,7 +276,7 @@ class DocumentUploadView(CreateView):
                     build_slack_message_document(
                         "document_new", self.object))
             except BaseException:
-                print "Could not send slack message for new document."
+                logger.error("Could not send slack message for new document.")
 
         register_event(self.request, EventType.EVENT_UPLOAD, self.object)
 
@@ -371,11 +377,37 @@ def document_metadata(
             category_form = CategoryForm(request.POST, prefix="category_choice_field", initial=int(
                 request.POST["category_choice_field"]) if "category_choice_field" in request.POST and
                 request.POST["category_choice_field"] else None)
+            tkeywords_form = TKeywordForm(request.POST)
         else:
             document_form = DocumentForm(instance=document, prefix="resource")
             category_form = CategoryForm(
                 prefix="category_choice_field",
                 initial=topic_category.id if topic_category else None)
+
+            # Keywords from THESAURUS management
+            doc_tkeywords = document.tkeywords.all()
+            tkeywords_list = ''
+            lang = 'en'  # TODO: use user's language
+            if doc_tkeywords and len(doc_tkeywords) > 0:
+                tkeywords_ids = doc_tkeywords.values_list('id', flat=True)
+                if hasattr(settings, 'THESAURUS') and settings.THESAURUS:
+                    el = settings.THESAURUS
+                    thesaurus_name = el['name']
+                    try:
+                        t = Thesaurus.objects.get(identifier=thesaurus_name)
+                        for tk in t.thesaurus.filter(pk__in=tkeywords_ids):
+                            tkl = tk.keyword.filter(lang=lang)
+                            if len(tkl) > 0:
+                                tkl_ids = ",".join(
+                                    map(str, tkl.values_list('id', flat=True)))
+                                tkeywords_list += "," + \
+                                    tkl_ids if len(
+                                        tkeywords_list) > 0 else tkl_ids
+                    except BaseException:
+                        tb = traceback.format_exc()
+                        logger.error(tb)
+
+            tkeywords_form = TKeywordForm(instance=document)
 
         if request.method == "POST" and document_form.is_valid(
         ) and category_form.is_valid():
@@ -430,12 +462,10 @@ def document_metadata(
             if new_poc is not None and new_author is not None:
                 document.poc = new_poc
                 document.metadata_author = new_author
-            if new_keywords:
-                document.keywords.clear()
-                document.keywords.add(*new_keywords)
-            if new_regions:
-                document.regions.clear()
-                document.regions.add(*new_regions)
+            document.keywords.clear()
+            document.keywords.add(*new_keywords)
+            document.regions.clear()
+            document.regions.add(*new_regions)
             document.category = new_category
             document.save()
             document_form.save_many2many()
@@ -450,6 +480,24 @@ def document_metadata(
                         )))
 
             message = document.id
+
+            try:
+                # Keywords from THESAURUS management
+                # Rewritten to work with updated autocomplete
+                if not tkeywords_form.is_valid():
+                    return HttpResponse(json.dumps({'message': "Invalid thesaurus keywords"}, status_code=400))
+
+                tkeywords_data = tkeywords_form.cleaned_data['tkeywords']
+
+                thesaurus_setting = getattr(settings, 'THESAURUS', None)
+                if thesaurus_setting:
+                    tkeywords_data = tkeywords_data.filter(
+                        thesaurus__identifier=thesaurus_setting['name']
+                    )
+                    document.tkeywords = tkeywords_data
+            except BaseException:
+                tb = traceback.format_exc()
+                logger.error(tb)
 
             return HttpResponse(json.dumps({'message': message}))
 
@@ -505,6 +553,7 @@ def document_metadata(
             "poc_form": poc_form,
             "author_form": author_form,
             "category_form": category_form,
+            "tkeywords_form": tkeywords_form,
             "metadata_author_groups": metadata_author_groups,
             "TOPICCATEGORY_MANDATORY": getattr(settings, 'TOPICCATEGORY_MANDATORY', False),
             "GROUP_MANDATORY_RESOURCES": getattr(settings, 'GROUP_MANDATORY_RESOURCES', False),
@@ -659,7 +708,7 @@ def document_metadata_detail(
     if document.group:
         try:
             group = GroupProfile.objects.get(slug=document.group.name)
-        except GroupProfile.DoesNotExist:
+        except ObjectDoesNotExist:
             group = None
     site_url = settings.SITEURL.rstrip('/') if settings.SITEURL.startswith('http') else settings.SITEURL
     register_event(request, EventType.EVENT_VIEW_METADATA, document)
@@ -673,3 +722,23 @@ def document_metadata_detail(
 @login_required
 def document_batch_metadata(request, ids):
     return batch_modify(request, ids, 'Document')
+
+
+class DocumentAutocomplete(autocomplete.Select2QuerySetView):
+
+    def get_queryset(self):
+        request = self.request
+        permitted = get_objects_for_user(
+            request.user,
+            'base.view_resourcebase')
+        qs = Document.objects.all().filter(id__in=permitted)
+
+        if self.q:
+            qs = qs.filter(title__icontains=self.q)
+
+        return get_visible_resources(
+            qs,
+            request.user if request else None,
+            admin_approval_required=settings.ADMIN_MODERATE_UPLOADS,
+            unpublished_not_visible=settings.RESOURCE_PUBLISHING,
+            private_groups_not_visibile=settings.GROUP_PRIVATE_RESOURCES)

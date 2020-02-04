@@ -23,10 +23,13 @@ from django.test import Client
 from selenium import webdriver
 from unittest import TestCase as StandardTestCase
 
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.contrib.auth import get_user_model
 from django.template.defaultfilters import slugify
-import mock
+try:
+    import unittest.mock as mock
+except ImportError:
+    import mock
 from owslib.map.wms111 import ContentMetadata
 
 from geonode.services.utils import test_resource_table_status
@@ -47,7 +50,7 @@ from collections import namedtuple
 
 class ModuleFunctionsTestCase(StandardTestCase):
 
-    @mock.patch("geonode.services.serviceprocessors.base.Catalog",
+    @mock.patch("geonode.services.serviceprocessors.base.catalog",
                 autospec=True)
     @mock.patch("geonode.services.serviceprocessors.base.settings",
                 autospec=True)
@@ -62,20 +65,14 @@ class ModuleFunctionsTestCase(StandardTestCase):
         }
         mock_settings.CASCADE_WORKSPACE = "something"
         phony_workspace = "fake"
-        cat = mock_catalog.return_value
+        cat = mock_catalog
         cat.get_workspace.return_value = phony_workspace
         result = base.get_geoserver_cascading_workspace(
             create=False)
         self.assertEqual(result, phony_workspace)
-        mock_catalog.assert_called_with(
-            service_url=mock_settings.OGC_SERVER[
-                "default"]["LOCATION"] + "rest",
-            username=mock_settings.OGC_SERVER["default"]["USER"],
-            password=mock_settings.OGC_SERVER["default"]["PASSWORD"]
-        )
         cat.get_workspace.assert_called_with(mock_settings.CASCADE_WORKSPACE)
 
-    @mock.patch("geonode.services.serviceprocessors.base.Catalog",
+    @mock.patch("geonode.services.serviceprocessors.base.catalog",
                 autospec=True)
     @mock.patch("geonode.services.serviceprocessors.base.settings",
                 autospec=True)
@@ -90,18 +87,12 @@ class ModuleFunctionsTestCase(StandardTestCase):
         }
         mock_settings.CASCADE_WORKSPACE = "something"
         phony_workspace = "fake"
-        cat = mock_catalog.return_value
+        cat = mock_catalog
         cat.get_workspace.return_value = None
         cat.create_workspace.return_value = phony_workspace
         result = base.get_geoserver_cascading_workspace(
             create=True)
         self.assertEqual(result, phony_workspace)
-        mock_catalog.assert_called_with(
-            service_url=mock_settings.OGC_SERVER[
-                "default"]["LOCATION"] + "rest",
-            username=mock_settings.OGC_SERVER["default"]["USER"],
-            password=mock_settings.OGC_SERVER["default"]["PASSWORD"]
-        )
         cat.get_workspace.assert_called_with(mock_settings.CASCADE_WORKSPACE)
         cat.create_workspace.assert_called_with(
             mock_settings.CASCADE_WORKSPACE,
@@ -266,7 +257,7 @@ class ModuleFunctionsTestCase(StandardTestCase):
         mock_map_service.return_value = (phony_url, mock_parsed_arcgis)
 
         handler = arcgis.ArcImageServiceHandler(phony_url)
-        self.assertEquals(handler.url, phony_url)
+        self.assertEqual(handler.url, phony_url)
 
         LayerESRIExtent = namedtuple('LayerESRIExtent', 'spatialReference xmin ymin ymax xmax')
         LayerESRIExtentSpatialReference = namedtuple('LayerESRIExtentSpatialReference', 'wkid latestWkid')
@@ -378,7 +369,7 @@ class ModuleFunctionsTestCase(StandardTestCase):
             maxScale=0
         )
         resource_fields = handler._get_indexed_layer_fields(layer_meta)
-        self.assertEquals(resource_fields['alternate'], '0-droits-ptroliers-et-gaziers-oil-and-gas-rights')
+        self.assertEqual(resource_fields['alternate'], '0-droits-ptroliers-et-gaziers-oil-and-gas-rights')
 
 
 class WmsServiceHandlerTestCase(GeoNodeBaseTestSupport):
@@ -560,7 +551,7 @@ class WmsServiceHandlerTestCase(GeoNodeBaseTestSupport):
     def test_local_user_cant_delete_service(self):
         self.client.logout()
         response = self.client.get(reverse('register_service'))
-        self.failUnlessEqual(response.status_code, 302)
+        self.assertEqual(response.status_code, 302)
         url = 'https://demo.geo-solutions.it/geoserver/ows?service=wms&version=1.3.0&request=GetCapabilities'
         # url = "http://fake"
         service_type = enumerations.WMS
@@ -575,15 +566,15 @@ class WmsServiceHandlerTestCase(GeoNodeBaseTestSupport):
         response = self.client.post(reverse('register_service'), data=form_data)
 
         s = Service.objects.all().first()
-        self.failUnlessEqual(len(Service.objects.all()), 1)
+        self.assertEqual(len(Service.objects.all()), 1)
         self.assertEqual(s.owner, self.test_user)
 
         self.client.login(username='serviceuser', password='somepassword')
         response = self.client.post(reverse('edit_service', args=(s.id,)))
-        self.failUnlessEqual(response.status_code, 401)
+        self.assertEqual(response.status_code, 401)
         response = self.client.post(reverse('remove_service', args=(s.id,)))
-        self.failUnlessEqual(response.status_code, 401)
-        self.failUnlessEqual(len(Service.objects.all()), 1)
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(len(Service.objects.all()), 1)
 
         self.client.login(username='serviceowner', password='somepassword')
         form_data = {
@@ -602,7 +593,7 @@ class WmsServiceHandlerTestCase(GeoNodeBaseTestSupport):
         self.assertEqual([u'Foo', u'OWS', u'Service'],
                          list(s.keywords.all().values_list('name', flat=True)))
         response = self.client.post(reverse('remove_service', args=(s.id,)))
-        self.failUnlessEqual(len(Service.objects.all()), 0)
+        self.assertEqual(len(Service.objects.all()), 0)
 
 
 class WmsServiceHarvestingTestCase(StaticLiveServerTestCase):
@@ -642,7 +633,7 @@ class WmsServiceHarvestingTestCase(StaticLiveServerTestCase):
             cls.selenium.refresh()
         except Exception as e:
             msg = str(e)
-            print msg
+            print(msg)
 
     @classmethod
     def tearDownClass(cls):

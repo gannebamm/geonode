@@ -693,6 +693,16 @@ By clicking over one Layer link, it will show a detail page allowing you to modi
 
 .. note:: It is strongly recommended to always use the GeoNode :guilabel:`Metadata Wizard` or :guilabel:`Metadata Advanced` tools in order to edit the metadata info.
 
+The ``Permissions`` can be changed also for multiple Layers at once throguh the :guilabel:`Set layers permissions` action.
+
+.. figure:: img/set_layers_permissions_action.png
+    :align: center
+
+By clicking over one Layer link, it will show a detail page allowing you to modify the permissions for the selected resources.
+
+.. figure:: img/set_layers_permissions_form.png
+    :align: center
+
 Manage the maps using the admin panel
 =====================================
 
@@ -801,7 +811,6 @@ Through the :guilabel:`Admin > Base > Hierarchical keywords` panel it will be po
 * The :guilabel:`Slug` is a unique label used by the system to identify the keyword; most of the times it is equal to the name.
 
 Notice that through the :guilabel:`Position` and :guilabel:`Relative to` selectors, it is possible to establish a hierarchy between the available keywords.
-The hierarchy will be reflected in the form of a tree from the metadata panels.
 
 By default each user with editing metadata rights on any resource, will be able to insert new keywords into the system by simply typing a free text on the keywords metadata field.
 

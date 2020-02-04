@@ -18,10 +18,9 @@
 #
 #########################################################################
 
-try:
-    import json
-except ImportError:
-    from django.utils import simplejson as json
+import json
+import traceback
+
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse
 from django.views.decorators.http import require_POST
@@ -46,10 +45,8 @@ def _perms_info(obj):
 
 def _perms_info_json(obj):
     info = _perms_info(obj)
-    info['users'] = dict([(u.username, perms)
-                          for u, perms in info['users'].items()])
-    info['groups'] = dict([(g.name, perms)
-                           for g, perms in info['groups'].items()])
+    info['users'] = {u.username: perms for u, perms in info['users'].items()}
+    info['groups'] = {g.name: perms for g, perms in info['groups'].items()}
 
     return json.dumps(info)
 
@@ -61,6 +58,7 @@ def resource_permissions(request, resource_id):
                 'id': resource_id}, 'base.change_resourcebase_permissions')
 
     except PermissionDenied:
+        traceback.print_exc()
         # we are handling this in a non-standard way
         return HttpResponse(
             'You are not allowed to change permissions for this resource',
@@ -71,25 +69,27 @@ def resource_permissions(request, resource_id):
         success = True
         message = "Permissions successfully updated!"
         try:
-            permission_spec = json.loads(request.body)
+            permission_spec = json.loads(request.body.decode('UTF-8'))
             resource.set_permissions(permission_spec)
 
             # Check Users Permissions Consistency
             view_any = False
             info = _perms_info(resource)
-            info_users = dict([(u.username, perms) for u, perms in info['users'].items()])
 
-            for user, perms in info_users.items():
-                if user == 'AnonymousUser':
-                    view_any = ('view_resourcebase' in perms)
+            for user, perms in info['users'].items():
+                if user.username == "AnonymousUser":
+                    view_any = "view_resourcebase" in perms
                     break
 
-            for user, perms in info_users.items():
-                if 'download_resourcebase' in perms and 'view_resourcebase' not in perms and not view_any:
+            for user, perms in info['users'].items():
+                if "download_resourcebase" in perms and \
+                   "view_resourcebase" not in perms and \
+                   not view_any:
+
                     success = False
-                    message = 'User ' + str(user) + ' has Download permissions but ' \
-                              'cannot access the resource. ' \
-                              'Please update permissions consistently!'
+                    message = "User {} has download permissions but cannot " \
+                              "access the resource. Please update permission " \
+                              "consistently!".format(user.username)
 
             return HttpResponse(
                 json.dumps({'success': success, 'message': message}),
@@ -97,6 +97,7 @@ def resource_permissions(request, resource_id):
                 content_type='text/plain'
             )
         except BaseException:
+            traceback.print_exc()
             success = False
             message = "Error updating permissions :("
             return HttpResponse(
@@ -113,6 +114,7 @@ def resource_permissions(request, resource_id):
             content_type='text/plain'
         )
     else:
+        traceback.print_exc()
         return HttpResponse(
             'No methods other than get and post are allowed',
             status=401,
@@ -136,6 +138,7 @@ def invalidate_permissions_cache(request):
             content_type='text/plain'
         )
     else:
+        traceback.print_exc()
         return HttpResponse(
             json.dumps({'success': 'false', 'message': 'You cannot modify this resource!'}),
             status=200,
@@ -145,7 +148,7 @@ def invalidate_permissions_cache(request):
 
 @require_POST
 def attributes_sats_refresh(request):
-    from geonode.geoserver.helpers import set_attributes_from_geoserver
+    from geonode.geoserver.helpers import gs_catalog, set_attributes_from_geoserver
     uuid = request.POST['uuid']
     resource = get_object_or_404(ResourceBase, uuid=uuid)
     can_change_data = request.user.has_perm(
@@ -153,8 +156,46 @@ def attributes_sats_refresh(request):
         resource)
     layer = Layer.objects.get(id=resource.id)
     if layer and can_change_data:
-        # recalculate the layer statistics
-        set_attributes_from_geoserver(layer, overwrite=True)
+        try:
+            # recalculate the layer statistics
+            set_attributes_from_geoserver(layer, overwrite=True)
+            gs_resource = gs_catalog.get_resource(
+                name=layer.name,
+                store=layer.store,
+                workspace=layer.workspace)
+            if not gs_resource:
+                gs_resource = gs_catalog.get_resource(
+                    name=layer.name,
+                    workspace=layer.workspace)
+            if not gs_resource:
+                gs_resource = gs_catalog.get_resource(name=layer.name)
+
+            if not gs_resource:
+                return HttpResponse(
+                    json.dumps(
+                        {
+                            'success': 'false',
+                            'message': 'Error trying to fetch the resource "%s" from GeoServer!' % layer.store
+                        }),
+                    status=302,
+                    content_type='text/plain')
+            from decimal import Decimal
+            layer.bbox_x0 = Decimal(gs_resource.native_bbox[0])
+            layer.bbox_x1 = Decimal(gs_resource.native_bbox[1])
+            layer.bbox_y0 = Decimal(gs_resource.native_bbox[2])
+            layer.bbox_y1 = Decimal(gs_resource.native_bbox[3])
+            layer.srid = gs_resource.projection
+            layer.save()
+        except BaseException as e:
+            traceback.print_exc()
+            return HttpResponse(
+                json.dumps(
+                    {
+                        'success': 'false',
+                        'message': 'Exception occurred: "%s"' % str(e)
+                    }),
+                status=302,
+                content_type='text/plain')
         return HttpResponse(
             json.dumps({'success': 'ok', 'message': 'Attributes/Stats Refreshed Successfully!'}),
             status=200,
@@ -238,6 +279,7 @@ def request_permissions(request):
             status=200,
             content_type='text/plain')
     except BaseException:
+        traceback.print_exc()
         return HttpResponse(
             json.dumps({'error': 'error delivering notification'}),
             status=400,
@@ -275,4 +317,5 @@ def send_email_owner_on_view(owner, viewer, layer_id, geonode_email="email@geo.n
             email.content_subtype = "html"
             email.send()
         except BaseException:
+            traceback.print_exc()
             pass

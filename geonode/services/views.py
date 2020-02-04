@@ -23,7 +23,7 @@ import logging
 from django.conf import settings
 from django.contrib import messages
 from django.core.paginator import EmptyPage, PageNotAnInteger, Paginator
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.http import HttpResponse, HttpResponseRedirect
 from django.http import Http404
 from django.shortcuts import get_object_or_404
@@ -37,8 +37,13 @@ from django.contrib.auth.decorators import login_required
 from geonode.security.views import _perms_info_json
 from geonode.layers.models import Layer
 from geonode.proxy.views import proxy
-from urlparse import urljoin
-from urllib import quote
+try:
+    from urllib.parse import urljoin
+    from urllib.parse import quote
+except ImportError:
+    # Python 2 compatibility
+    from urlparse import urljoin
+    from urllib import quote
 from .serviceprocessors import get_service_handler
 from . import enumerations
 from . import forms
@@ -110,15 +115,12 @@ def register_service(request):
 
 def _get_service_handler(request, service):
     """Add the service handler to the HttpSession.
-
     We use the django session object to store the service handler's
     representation of the remote service between sequentially logic steps.
     This is done in order to improve user experience, as we avoid making
     multiple Capabilities requests (this is a time saver on servers that
     feature many layers.
-
     """
-
     service_handler = get_service_handler(
         service.base_url, service.proxy_base, service.type)
     request.session[service.base_url] = service_handler

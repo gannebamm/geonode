@@ -20,17 +20,18 @@
 
 try:  # for pip >= 10
     from pip._internal.req import parse_requirements
-    from pip._internal.download import PipSession
+    pip_session = 'hack'
 except ImportError:  # for pip <= 9.0.3
     from pip.req import parse_requirements
     from pip.download import PipSession
+    pip_session = PipSession()
 from distutils.core import setup
 
 from setuptools import find_packages
 
 # Parse requirements.txt to get the list of dependencies
 inst_req = parse_requirements('requirements.txt',
-                              session=PipSession())
+                              session=pip_session)
 REQUIREMENTS = [str(r.req) for r in inst_req]
 
 setup(name='GeoNode',
@@ -38,8 +39,8 @@ setup(name='GeoNode',
       description="Application for serving and sharing geospatial data",
       long_description=open('README.md').read(),
       classifiers=[
-          "Development Status :: 4 - Beta"],
-      python_requires='>=2.7, <3',
+          "Development Status :: 5 - Production/Stable"],
+      python_requires='>=3',
       keywords='',
       author='GeoNode Developers',
       author_email='dev@geonode.org',

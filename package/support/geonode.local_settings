@@ -133,14 +133,6 @@ OGC_SERVER = {
     }
 }
 
-# WARNING: Map Editing is affected by this. GeoExt Configuration is cached for 5 minutes
-# CACHES = {
-#     'default': {
-#         'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
-#         'LOCATION': '/var/tmp/django_cache',
-#     }
-# }
-
 # If you want to enable Mosaics use the following configuration
 UPLOADER = {
     'BACKEND': 'geonode.rest',
@@ -347,35 +339,6 @@ GEONODE_CLIENT_HOOKSET = "geonode.client.hooksets.GeoExtHookSet"
 MAPBOX_ACCESS_TOKEN = os.environ.get('MAPBOX_ACCESS_TOKEN', None)
 BING_API_KEY = os.environ.get('BING_API_KEY', None)
 GOOGLE_API_KEY = os.environ.get('GOOGLE_API_KEY', None)
-
-MAP_BASELAYERS = [{
-    "source": {"ptype": "gxp_olsource"},
-    "type": "OpenLayers.Layer",
-    "args": ["No background"],
-    "name": "background",
-    "visibility": False,
-    "fixed": True,
-    "group":"background"
-},
-    # {
-    #     "source": {"ptype": "gxp_olsource"},
-    #     "type": "OpenLayers.Layer.XYZ",
-    #     "title": "TEST TILE",
-    #     "args": ["TEST_TILE", "http://test_tiles/tiles/${z}/${x}/${y}.png"],
-    #     "name": "background",
-    #     "attribution": "&copy; TEST TILE",
-    #     "visibility": False,
-    #     "fixed": True,
-    #     "group":"background"
-    # },
-    {
-    "source": {"ptype": "gxp_osmsource"},
-    "type": "OpenLayers.Layer.OSM",
-    "name": "mapnik",
-    "visibility": True,
-    "fixed": True,
-    "group": "background"
-}]
 
 if 'geonode.geoserver' in INSTALLED_APPS:
     LOCAL_GEOSERVER = {

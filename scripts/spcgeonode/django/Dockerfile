@@ -2,7 +2,7 @@
 # But it seems it's not possible for now because alpine only has geos 3.6 which is not supported by django 1.8
 # (probably because of https://code.djangoproject.com/ticket/28441)
 
-FROM python:2.7.16-slim-stretch
+FROM python:3.7-slim-stretch
 
 # Install system dependencies
 RUN echo "Updating apt-get" && \
@@ -30,7 +30,7 @@ RUN echo "Updating apt-get" && \
 
 # Install python dependencies
 RUN echo "Geonode python dependencies"
-RUN pip install celery==4.1.0 # see https://github.com/GeoNode/geonode/pull/3714
+RUN pip install celery==4.4.0
 
 # Install geonode dependencies
 ADD requirements.txt /requirements.txt
@@ -44,7 +44,7 @@ RUN pip install pygdal==$(gdal-config --version).*
 RUN mkdir /spcgeonode
 WORKDIR /spcgeonode/
 ADD . /spcgeonode/
-RUN pip install -e .
+RUN pip install -e . --upgrade
 RUN chmod +x scripts/spcgeonode/django/docker-entrypoint.sh
 
 # Export ports

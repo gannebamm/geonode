@@ -17,10 +17,9 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 #########################################################################
-try:
-    import json
-except ImportError:
-    from django.utils import simplejson as json
+import json
+
+from six import string_types
 
 
 class GeoExtHookSet(object):
@@ -77,7 +76,7 @@ class GeoExtHookSet(object):
         if not context:
             context = {}
 
-        if isinstance(conf, basestring):
+        if isinstance(conf, string_types):
             conf = json.loads(conf)
         return conf
 

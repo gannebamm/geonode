@@ -40,6 +40,7 @@ import shutil
 import uuid
 import zipfile
 import traceback
+from six import string_types
 
 from django.conf import settings
 from django.db.models import Max
@@ -176,7 +177,7 @@ def upload(
 
     if user is None:
         user = get_default_user()
-    if isinstance(user, basestring):
+    if isinstance(user, string_types):
         user = get_user_model().objects.get(username=user)
     import_session = save_step(
         user,
@@ -215,14 +216,14 @@ def upload(
 
     utils.run_import(upload_session, async_upload=False)
 
-    final_step(upload_session, user)
+    final_step(upload_session, user, charset=charset)
 
 
 def _get_next_id():
     # importer tracks ids by autoincrement but is prone to corruption
     # which potentially may reset the id - hopefully prevent this...
-    upload_next_id = Upload.objects.all().aggregate(
-        Max('import_id')).values()[0]
+    upload_next_id = list(Upload.objects.all().aggregate(
+        Max('import_id')).values())[0]
     upload_next_id = upload_next_id if upload_next_id else 0
     # next_id = next_id + 1 if next_id else 1
     importer_sessions = gs_uploader.get_sessions()
@@ -276,7 +277,8 @@ def save_step(user, layer, spatial_files, overwrite=True, mosaic=False,
               mosaic_time_regex=None, mosaic_time_value=None,
               time_presentation=None, time_presentation_res=None,
               time_presentation_default_value=None,
-              time_presentation_reference_value=None):
+              time_presentation_reference_value=None,
+              charset_encoding="UTF-8"):
     logger.debug(
         'Uploading layer: {}, files {!r}'.format(layer, spatial_files))
     if len(spatial_files) > 1:
@@ -340,14 +342,16 @@ def save_step(user, layer, spatial_files, overwrite=True, mosaic=False,
                     files_to_upload[1:],
                     use_url=False,
                     # import_id=next_id,
-                    target_store=target_store
+                    target_store=target_store,
+                    charset_encoding=charset_encoding
                 )
             else:
                 import_session = gs_uploader.upload_files(
                     files_to_upload,
                     use_url=False,
                     # import_id=next_id,
-                    target_store=target_store
+                    target_store=target_store,
+                    charset_encoding=charset_encoding
                 )
             next_id = import_session.id if import_session else None
             if not next_id:
@@ -359,7 +363,8 @@ def save_step(user, layer, spatial_files, overwrite=True, mosaic=False,
                 use_url=False,
                 import_id=next_id,
                 mosaic=False,
-                target_store=None
+                target_store=None,
+                charset_encoding=charset_encoding
             )
         upload.import_id = import_session.id
         upload.save()
@@ -545,7 +550,7 @@ def srs_step(upload_session, source, target):
     upload_session.import_session = import_session
 
 
-def final_step(upload_session, user):
+def final_step(upload_session, user, charset="UTF-8"):
     from geonode.geoserver.helpers import get_sld_for
     import_session = upload_session.import_session
     _log('Reloading session %s to check validity', import_session.id)
@@ -564,6 +569,7 @@ def final_step(upload_session, user):
     # FIXME: Put this in gsconfig.py
 
     task = import_session.tasks[0]
+    task.set_charset(charset)
 
     # @todo see above in save_step, regarding computed unique name
     name = task.layer.name
@@ -650,10 +656,9 @@ def final_step(upload_session, user):
                 try:
                     style = cat.get_style(name + '_layer', workspace=settings.DEFAULT_WORKSPACE) or \
                         cat.get_style(name + '_layer')
-                except BaseException:
+                except BaseException as e:
                     style = cat.get_style('point')
-                    logger.warn(msg)
-                    e.args = (msg,)
+                    logger.warn(str(e))
 
         if style:
             publishing.default_style = style

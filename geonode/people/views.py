@@ -22,7 +22,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.shortcuts import render, redirect, get_object_or_404
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.utils.translation import ugettext as _
 from django.contrib.sites.models import Site
 from django.conf import settings
@@ -33,6 +33,8 @@ from geonode.people.models import Profile
 from geonode.people.forms import ProfileForm
 from geonode.people.forms import ForgotUsernameForm
 from geonode.tasks.tasks import send_email
+
+from dal import autocomplete
 
 
 @login_required
@@ -110,3 +112,17 @@ def forgot_username(request):
         'message': message,
         'form': username_form
     })
+
+
+class ProfileAutocomplete(autocomplete.Select2QuerySetView):
+
+    def get_queryset(self):
+        qs = Profile.objects.all().exclude(Q(username='AnonymousUser') | Q(is_active=False))
+
+        if self.q:
+            qs = qs.filter(Q(username__icontains=self.q)
+                           | Q(email__icontains=self.q)
+                           | Q(first_name__icontains=self.q)
+                           | Q(last_name__icontains=self.q))
+
+        return qs

@@ -38,21 +38,23 @@
     <link rel="shortcut icon" href="{% static 'geonode/img/favicon.ico' %}" />
 
     {% block head %}
+
       {% if DEBUG_STATIC %}
-          <link href="{% static "lib/css/jquery.dataTables.css" %}?v={{ VERSION }}" rel="stylesheet" />
-          <link href="{% static "lib/css/select2.css" %}?v={{ VERSION }}" rel="stylesheet"/>
-          <link href="{% static "lib/css/bootstrap.min.css" %}?v={{ VERSION }}" rel="stylesheet"/>
-          <link href="{% static "lib/css/jquery-ui.css" %}?v={{ VERSION }}" rel="stylesheet"/>
+          <link href="{% static "lib/css/jquery.dataTables.css" %}" rel="stylesheet" />
+          <link href="{% static "lib/css/select2.css" %}" rel="stylesheet"/>
+          <link href="{% static "lib/css/bootstrap.css" %}" rel="stylesheet"/>
+          <link href="{% static "lib/css/bootstrap-treeview.css" %}" rel="stylesheet"/>
+          <link href="{% static "lib/css/jquery-ui.theme.css" %}" rel="stylesheet"/>
+          <link href="{% static "lib/css/jquery-ui.structure.css" %}" rel="stylesheet"/>
+          <link href="{% static "lib/css/bootstrap-treeview.css" %}" rel="stylesheet"/>
       {% else %}
-        <link href="{% static "lib/css/assets.min.css" %}?v={{ VERSION }}" rel="stylesheet"/>
+        <link href="{% static "lib/css/assets.min.css" %}" rel="stylesheet"/>
       {% endif %}
 
-      <link href="{% static "geonode/css/ext-compatibility.css" %}?v={{ VERSION }}" rel="stylesheet" />
-      <link href="{% static "geonode/css/ux-all.css" %}?v={{ VERSION }}" rel="stylesheet" />
-      <link href="{% static "geonode/css/base.css" %}?v={{ VERSION }}" rel="stylesheet" />
+      <link href="{% static "geonode/css/base.css" %}" rel="stylesheet" />
 
-      <link rel='stylesheet' id='cookie-law-info-css'  href="{% static "geonode/css/cookie-law-info/cookie-law-info-public.css" %}?v={{ VERSION }}" type='text/css' media='all' />
-      <link rel='stylesheet' id='cookie-law-info-gdpr-css'  href="{% static "geonode/css/cookie-law-info/cookie-law-info-gdpr.css" %}?v={{ VERSION }}" type='text/css' media='all' />
+      <link rel='stylesheet' id='cookie-law-info-css'  href="{% static "geonode/css/cookie-law-info/cookie-law-info-public.css" %}" type='text/css' media='all' />
+      <link rel='stylesheet' id='cookie-law-info-gdpr-css'  href="{% static "geonode/css/cookie-law-info/cookie-law-info-gdpr.css" %}" type='text/css' media='all' />
 
       <style type="text/css">[ng\:cloak],[ng-cloak],[data-ng-cloak],[x-ng-cloak],.ng-cloak,.x-ng-cloak,.ng-hide:not(.ng-hide-animate){display:none !important;}</style>
       <style type="text/css">
@@ -63,6 +65,12 @@
           {% if custom_theme.body_text_color %}
           color: {{ custom_theme.body_text_color }};
           {% endif %}
+        }
+
+        .home #partners {
+          background: {{ custom_theme.body_color }};
+          padding: 2em 0;
+          text-align: center;
         }
         {% endif %}
 
@@ -146,7 +154,10 @@
 
         {% if custom_theme.jumbotron_text_color %}
         .home .jumbotron p {
-          color: {{ custom_theme.jumbotron_text_color }}
+          color: {{ custom_theme.jumbotron_text_color }};
+          font-weight: normal;
+          font-size: xx-large;
+          font-family: 'Open Sans','Helvetica Neue',Arial,sans-serif;
         }
         {% endif %}
 
@@ -179,12 +190,36 @@
         }
         {% endif %}
 
+        {% if custom_theme.search_bg_color or custom_theme.search_title_color %}
+        .home .big-search {
+          background: {{ custom_theme.search_bg_color }};
+          color: {{ custom_theme.search_title_color }};
+          padding-bottom: 3em;
+          padding-top: 1em;
+        }
+        .home .big-search .btn-default {
+          background: transparent;
+          border: none;
+          color: {{ custom_theme.search_link_color }};
+        }
+        {% endif %}
+
         {% if custom_theme.copyright_color %}
         .footer-copyright {
           background-color: {{ custom_theme.copyright_color }};
         }
         {% endif %}
 
+        {% if custom_theme.footer_bg_color or custom_theme.footer_text_color or custom_theme.footer_href_color %}
+        footer {
+          background-color: {{ custom_theme.footer_bg_color }};
+          color: {{ custom_theme.footer_text_color }};
+          padding: 1.5em;
+        }
+        footer a {
+          color: {{ custom_theme.footer_href_color }};
+        }
+        {% endif %}
       </style>
       {% block extra_head %}
       {% endblock %}
@@ -204,6 +239,23 @@
     <script>
         var siteUrl = '{{ SITEURL }}'.replace(/\/?$/, '/');
         var staticUrl = '{% static '' %}';
+    </script>
+
+    <!-- Autocomplete script for input boxes -->
+    <script src="{% static "geonode/js/search/autocomplete.js" %}"></script>
+
+    <script type="text/javascript">
+      function thumbnailFeedbacks(data, status) {
+        try {
+          $("#_thumbnail_feedbacks").find('.modal-title').text(status);
+          $("#_thumbnail_feedbacks").find('.modal-body').text(data);
+          $("#_thumbnail_feedbacks").modal("show");
+        } catch (err) {
+          console.log(err);
+        } finally {
+          return true;
+        }
+      }
     </script>
 
   </head>
@@ -293,11 +345,13 @@
               <div class="search">
                 <form id="search" action="{% url "search" %}" >
                   <span class="fa fa-search"></span>
-                  {% if HAYSTACK_SEARCH %}
-                  <input id="search_input" type="text" placeholder="{% trans 'Search' %}" name="q">
-                  {% else %}
-                  <input id="search_input" type="text" placeholder="{% trans 'Search' %}" name="title__icontains">
-                  {% endif %}
+                  <div id="search-container" class="autocomplete-input">
+                    {% if HAYSTACK_SEARCH %}
+                    <input autocomplete="off" id="search_input" type="text" placeholder="{% trans 'Search' %}" name="q">
+                    {% else %}
+                    <input autocomplete="off" type="text" name="title__icontains" id="search_input" placeholder="Search" >
+                    {% endif %}
+                  </div> 
                 </form>
               </div>
             </li>
@@ -537,63 +591,51 @@
     <!-- End of Modal -->
 
     {% if DEBUG_STATIC %}
-    <script src="{% static "lib/js/jquery.min.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/jquery.dataTables.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/jquery.timeago.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/jquery.ajaxprogress.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/jquery-ui.custom.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/jquery.raty.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/bootstrap.min.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/moment-with-locales.min.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/bootstrap-datetimepicker.min.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/json2.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/select2.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "lib/js/waypoints.js" %}?v={{ VERSION }}"></script>
+    <script src="{% static "lib/js/jquery.js" %}"></script>
+    <script src="{% static "lib/js/jquery.dataTables.js" %}"></script>
+    <script src="{% static "lib/js/bootstrap-treeview.js" %}"></script>
+    <script src="{% static "lib/js/bootstrap-tokenfield.js" %}"></script>
+    <script src="{% static "lib/js/fastselect.standalone.js" %}"></script>
+    <script src="{% static "lib/js/select2.full.js" %}"></script>
+    <script src="{% static "lib/js/jquery.timeago.js" %}"></script>
+    <script src="{% static "lib/js/jq-ajax-progress.js" %}"></script>
+    <script src="{% static "lib/js/jquery-ui.js" %}"></script>
+    <script src="{% static "lib/js/jquery.raty.js" %}"></script>
+    <script src="{% static "lib/js/bootstrap.js" %}"></script>
+    <script src="{% static "lib/js/moment-with-locales.js" %}"></script>
+    <script src="{% static "lib/js/bootstrap-datetimepicker.js" %}"></script>
+    <script src="{% static "lib/js/json2.js" %}"></script>
+    <script src="{% static "lib/js/waypoints.js" %}"></script>
     {% else %}
-    <script src="{% static "lib/js/assets.min.js" %}?v={{ VERSION }}"></script>
+    <script src="{% static "lib/js/assets.min.js" %}"></script>
     {% endif %}
-    <script src="{% static "geonode/js/utils/utils.js" %}?v={{ VERSION }}"></script>
-    <script src="{% static "geonode/js/base/base.js" %}?v={{ VERSION }}"></script>
-    {% include 'autocomplete_light/static.html' %}
+    <script src="{% static "geonode/js/utils/utils.js" %}"></script>
+    <script src="{% static "geonode/js/base/base.js" %}"></script>
     <script type="text/javascript" src="{% url "javascript-catalog" %}"></script>
     {% block extra_script %}{% endblock extra_script %}
     <script type="text/javascript">
-        var autocomplete = $('#search_input').yourlabsAutocomplete({
-            url: '{% url "autocomplete_light_autocomplete" "ResourceBaseAutocomplete" %}',
-            choiceSelector: 'span',
-            hideAfter: 200,
-            minimumCharacters: 1,
-            placeholder: '{% trans 'Type your search here ...' %}',
-            appendAutocomplete: $('#search_input'),
-            autoHilightFirst: false
-        });
-        $('#search_input').bind('selectChoice', function(e, choice, autocomplete) {
-            if(choice[0].children[0] == undefined) {
-                $('#search_input').val($(choice[0]).text());
-                $('#search').submit();
-            }
-        });
-        $(".datepicker").datepicker({
-            format: "yyyy-mm-dd"
-        });
+
+      // Autocomplete instance for the search found in the header.
+      $(document).ready(function() {
+        window.autocomplete2 = new Autocomplete({
+          form_selector: '#search',
+          input_selector: '#search_input',
+          container_selector: '#search-container',
+          url: '{% url "autocomplete_base" %}'
+        })
+        window.autocomplete2.setup()
+      })
+      
+      $('#search_input').bind('selectChoice', function(e, choice) {
+          if(choice[0].children[0] == undefined) {
+              $('#search_input').val($(choice[0]).text());
+              $('#search').submit();
+          }
+      });
+      $(".datepicker").datepicker({
+          format: "yyyy-mm-dd"
+      });
     </script>
-    <script>
-        // Workaround to fix the autocomplete box positions
-        yourlabs.Autocomplete.prototype.fixPosition = function(html) {
-            this.input.parents().filter(function() {
-                return $(this).css('overflow') === 'hidden';
-            }).first().css('overflow', 'visible');
-            if(this.input.attr('name') !== 'resource-keywords'){
-              this.box.insertAfter(this.input).css({top: 28, left: 0});
-            }else{
-              var pos = $.extend({}, this.input.position(), {
-                height: this.input.outerHeight()
-              });
-              this.box.insertAfter(this.input).css({top: pos.top + pos.height, left: pos.left});
-            }
-        };
-    </script>
-    <script type="text/javascript" src="{% url "lang" %}"></script>
 
     <div class="modal fade" style="width: 100%; height: 100%;" id="_resource_uploading" data-backdrop="static" data-keyboard="false" aria-hidden="true">
         <div class="modal-dialog">

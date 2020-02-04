@@ -23,25 +23,24 @@ import re
 import six
 import ast
 import copy
+import json
 import time
 import base64
 import logging
 import select
 import shutil
 import string
-import urllib
 import tarfile
 import weakref
 import datetime
 import requests
 import tempfile
-import urlparse
 import traceback
 import subprocess
 
 from osgeo import ogr
 from slugify import slugify
-from StringIO import StringIO
+from io import StringIO
 from contextlib import closing
 from math import atan, exp, log, pi, sin, tan, floor
 from zipfile import ZipFile, is_zipfile, ZIP_DEFLATED
@@ -62,15 +61,39 @@ from django.contrib.gis.geos import GEOSGeometry
 from django.core.serializers.json import DjangoJSONEncoder
 from django.contrib.auth import get_user_model
 from geonode import geoserver, qgis_server, GeoNodeException  # noqa
+from geonode.compat import ensure_string
 from geonode.base.auth import (extend_token,
                                get_or_create_token,
                                get_token_from_auth_header,
                                get_token_object_from_session)
 
 try:
-    import json
+    from urllib import (
+        unquote,
+        urlencode,
+    )
+    from urlparse import (
+        urljoin,
+        urlparse,
+        urlsplit,
+        parse_qs,
+        parse_qsl,
+        ParseResult,
+        SplitResult
+    )
 except ImportError:
-    from django.utils import simplejson as json
+    # Python 3 fallback
+    from urllib.parse import (
+        urljoin,
+        unquote,
+        urlparse,
+        urlsplit,
+        urlencode,
+        parse_qs,
+        parse_qsl,
+        ParseResult,
+        SplitResult
+    )
 
 DEFAULT_TITLE = ""
 DEFAULT_ABSTRACT = ""
@@ -139,13 +162,57 @@ def extract_tarfile(upload_file, extension='.shp', tempdir=None):
     return absolute_base_file
 
 
+def get_layer_name(layer):
+    """Get the workspace where the input layer belongs"""
+    _name = layer.name
+    if _name and ':' in _name:
+        _name = _name.split(':')[1]
+    try:
+        if not _name and layer.alternate:
+            if ':' in layer.alternate:
+                _name = layer.alternate.split(':')[1]
+            else:
+                _name = layer.alternate
+    except BaseException:
+        pass
+    return _name
+
+
+def get_layer_workspace(layer):
+    """Get the workspace where the input layer belongs"""
+    alternate = None
+    workspace = None
+    try:
+        alternate = layer.alternate
+    except BaseException:
+        alternate = layer.name
+    try:
+        workspace = layer.workspace
+    except BaseException:
+        workspace = None
+    if not workspace and alternate and ':' in alternate:
+        workspace = alternate.split(":")[1]
+    if not workspace:
+        default_workspace = getattr(settings, "DEFAULT_WORKSPACE", "geonode")
+        try:
+            from geonode.services.enumerations import CASCADED
+            if layer.remote_service.method == CASCADED:
+                workspace = getattr(
+                    settings, "CASCADE_WORKSPACE", default_workspace)
+            else:
+                raise RuntimeError("Layer is not cascaded")
+        except AttributeError:  # layer does not have a service
+            workspace = default_workspace
+    return workspace
+
+
 def get_headers(request, url, raw_url, allowed_hosts=[]):
     headers = {}
     cookies = None
     csrftoken = None
 
     if settings.SESSION_COOKIE_NAME in request.COOKIES and is_safe_url(
-            url=raw_url, host=url.hostname):
+            url=raw_url, allowed_hosts=url.hostname):
         cookies = request.META["HTTP_COOKIE"]
 
     for cook in request.COOKIES:
@@ -174,7 +241,7 @@ def get_headers(request, url, raw_url, allowed_hosts=[]):
         headers["Content-Type"] = request.META["CONTENT_TYPE"]
 
     access_token = None
-    site_url = urlparse.urlsplit(settings.SITEURL)
+    site_url = urlsplit(settings.SITEURL)
     allowed_hosts += [url.hostname]
     # We want to convert HTTP_AUTH into a Beraer Token only when hitting the local GeoServer
     if site_url.hostname in allowed_hosts:
@@ -220,7 +287,7 @@ def _get_basic_auth_info(request):
     meth, auth = request.META['HTTP_AUTHORIZATION'].split()
     if meth.lower() != 'basic':
         raise ValueError
-    username, password = base64.b64decode(auth).split(':')
+    username, password = base64.b64decode(auth.encode()).decode().split(':')
     return username, password
 
 
@@ -263,8 +330,13 @@ def bbox_to_wkt(x0, x1, y0, y1, srid="4326"):
     if srid and str(srid).startswith('EPSG:'):
         srid = srid[5:]
     if None not in [x0, x1, y0, y1]:
-        wkt = 'SRID=%s;POLYGON((%s %s,%s %s,%s %s,%s %s,%s %s))' % (
-            srid, x0, y0, x0, y1, x1, y1, x1, y0, x0, y0)
+        wkt = 'SRID=%s;POLYGON((%f %f,%f %f,%f %f,%f %f,%f %f))' % (
+            srid,
+            float(x0), float(y0),
+            float(x0), float(y1),
+            float(x1), float(y1),
+            float(x1), float(y0),
+            float(x0), float(y0))
     else:
         wkt = 'SRID=4326;POLYGON((-180 -90,-180 90,180 90,180 -90,-180 -90))'
     return wkt
@@ -314,7 +386,7 @@ def bbox_to_projection(native_bbox, target_srid=4326):
                 ("EPSG:%s" % target_srid,)
         except BaseException:
             tb = traceback.format_exc()
-            logger.info(tb)
+            logger.debug(tb)
 
     return native_bbox
 
@@ -409,7 +481,7 @@ def layer_from_viewer_config(map_id, model, layer, source, ordering, save_map=Tr
     """
     layer_cfg = dict(layer)
     for k in ["format", "name", "opacity", "styles", "transparent",
-              "fixed", "group", "visibility", "source", "getFeatureInfo"]:
+              "fixed", "group", "visibility", "source"]:
         if k in layer_cfg:
             del layer_cfg[k]
     layer_cfg["id"] = 1
@@ -447,13 +519,14 @@ def layer_from_viewer_config(map_id, model, layer, source, ordering, save_map=Tr
         stack_order=ordering,
         format=layer.get("format", None),
         name=layer.get("name", None),
+        store=layer.get("store", None),
         opacity=layer.get("opacity", 1),
         styles=styles,
         transparent=layer.get("transparent", False),
         fixed=layer.get("fixed", False),
         group=layer.get('group', None),
         visibility=layer.get("visibility", True),
-        ows_url=source.get("url", None),
+        ows_url=source.get("url", None) if source else None,
         layer_params=json.dumps(layer_cfg),
         source_params=json.dumps(source_cfg)
     )
@@ -519,7 +592,7 @@ class GXPMapBase(object):
             server_lookup[json.dumps(source)] = str(i)
 
         def source_lookup(source):
-            for k, v in sources.iteritems():
+            for k, v in sources.items():
                 if v == source:
                     return k
             return None
@@ -536,7 +609,7 @@ class GXPMapBase(object):
                        for source in sources.values() if source and 'url' in source]
 
         if 'geonode.geoserver' in settings.INSTALLED_APPS:
-            if len(sources.keys()) > 0 and \
+            if len(sources.keys()) > 0 and 'source' in settings.MAP_BASELAYERS[0] and \
                 'url' in settings.MAP_BASELAYERS[0]['source'] and \
                     not settings.MAP_BASELAYERS[0]['source']['url'] in source_urls:
                 keys = sorted(sources.keys())
@@ -553,7 +626,7 @@ class GXPMapBase(object):
             return base_source
 
         for idx, lyr in enumerate(settings.MAP_BASELAYERS):
-            if _base_source(
+            if "source" in lyr and _base_source(
                     lyr["source"]) not in map(
                     _base_source,
                     sources.values()):
@@ -654,20 +727,20 @@ class GXPLayerBase(object):
             Will also override any access_token in the request and replace it with an existing one.
             '''
             urls = []
-            for name, server in settings.OGC_SERVER.iteritems():
-                url = urlparse.urlsplit(server['PUBLIC_LOCATION'])
+            for name, server in settings.OGC_SERVER.items():
+                url = urlsplit(server['PUBLIC_LOCATION'])
                 urls.append(url.netloc)
 
-            my_url = urlparse.urlsplit(self.ows_url)
+            my_url = urlsplit(self.ows_url)
 
             if str(access_token) and my_url.netloc in urls:
-                request_params = urlparse.parse_qs(my_url.query)
+                request_params = parse_qs(my_url.query)
                 if 'access_token' in request_params:
                     del request_params['access_token']
                 # request_params['access_token'] = [access_token]
-                encoded_params = urllib.urlencode(request_params, doseq=True)
+                encoded_params = urlencode(request_params, doseq=True)
 
-                parsed_url = urlparse.SplitResult(
+                parsed_url = SplitResult(
                     my_url.scheme,
                     my_url.netloc,
                     my_url.path,
@@ -760,7 +833,7 @@ def default_map_config(request):
             None,
             GXPLayer,
             layer=lyr,
-            source=lyr["source"],
+            source=lyr["source"] if lyr and "source" in lyr else None,
             ordering=order
         )
 
@@ -924,7 +997,7 @@ def json_response(body=None, errors=None, url=None, redirect_to=None, exception=
     if content_type is None:
         content_type = "application/json"
     if errors:
-        if isinstance(errors, basestring):
+        if isinstance(errors, six.string_types):
             errors = [errors]
         body = {
             'success': False,
@@ -957,7 +1030,7 @@ def json_response(body=None, errors=None, url=None, redirect_to=None, exception=
     if status is None:
         status = 200
 
-    if not isinstance(body, basestring):
+    if not isinstance(body, six.string_types):
         body = json.dumps(body, cls=DjangoJSONEncoder)
     return HttpResponse(body, content_type=content_type, status=status)
 
@@ -988,7 +1061,7 @@ def format_urls(a, values):
     for i in a:
         j = i.copy()
         try:
-            j['url'] = unicode(j['url']).format(**values)
+            j['url'] = str(j['url']).format(**values)
         except KeyError:
             j['url'] = None
         b.append(j)
@@ -1057,6 +1130,7 @@ def check_shp_columnnames(layer):
 def fixup_shp_columnnames(inShapefile, charset, tempdir=None):
     """ Try to fix column names and warn the user
     """
+    charset = charset if charset and 'undefined' not in charset else 'UTF-8'
 
     if not tempdir:
         tempdir = tempfile.mkdtemp()
@@ -1089,51 +1163,55 @@ def fixup_shp_columnnames(inShapefile, charset, tempdir=None):
     list_col = {}
 
     for i in range(0, inLayerDefn.GetFieldCount()):
-        field_name = inLayerDefn.GetFieldDefn(i).GetName()
-
-        if a.match(field_name):
-            list_col_original.append(field_name)
+        try:
+            field_name = inLayerDefn.GetFieldDefn(i).GetName()
+            if a.match(field_name):
+                list_col_original.append(field_name)
+        except BaseException as e:
+            logger.exception(e)
+            return True, None, None
 
     for i in range(0, inLayerDefn.GetFieldCount()):
-        charset = charset if charset and 'undefined' not in charset \
-            else 'UTF-8'
-
-        field_name = inLayerDefn.GetFieldDefn(i).GetName()
-        if not a.match(field_name):
-            # once the field_name contains Chinese, to use slugify_zh
-            has_ch = False
-            for ch in field_name:
-                try:
-                    if u'\u4e00' <= ch.decode("utf-8", "replace") <= u'\u9fff':
+        try:
+            field_name = inLayerDefn.GetFieldDefn(i).GetName()
+            if not a.match(field_name):
+                # once the field_name contains Chinese, to use slugify_zh
+                has_ch = False
+                for ch in field_name:
+                    try:
+                        if u'\u4e00' <= ch.decode("utf-8", "surrogateescape") <= u'\u9fff':
+                            has_ch = True
+                            break
+                    except BaseException:
                         has_ch = True
                         break
-                except UnicodeDecodeError:
-                    has_ch = True
-                    break
-            if has_ch:
-                new_field_name = slugify_zh(field_name, separator='_')
-            else:
-                new_field_name = slugify(field_name)
-            if not b.match(new_field_name):
-                new_field_name = '_' + new_field_name
-            j = 0
-            while new_field_name in list_col_original or new_field_name in list_col.values():
-                if j == 0:
-                    new_field_name += '_0'
-                if new_field_name.endswith('_' + str(j)):
-                    j += 1
-                    new_field_name = new_field_name[:-2] + '_' + str(j)
-            list_col.update({field_name: new_field_name})
+                if has_ch:
+                    new_field_name = slugify_zh(field_name, separator='_')
+                else:
+                    new_field_name = slugify(field_name)
+                if not b.match(new_field_name):
+                    new_field_name = '_' + new_field_name
+                j = 0
+                while new_field_name in list_col_original or new_field_name in list_col.values():
+                    if j == 0:
+                        new_field_name += '_0'
+                    if new_field_name.endswith('_' + str(j)):
+                        j += 1
+                        new_field_name = new_field_name[:-2] + '_' + str(j)
+                list_col.update({field_name: new_field_name})
+        except BaseException as e:
+            logger.exception(e)
+            return True, None, None
 
     if len(list_col) == 0:
         return True, None, None
     else:
         try:
             for key in list_col.keys():
-                qry = u"ALTER TABLE {} RENAME COLUMN \"".format(inLayer.GetName())
-                qry = qry + key.decode(charset) + u"\" TO \"{}\"".format(list_col[key])
-                inDataSource.ExecuteSQL(qry.encode(charset))
-        except UnicodeDecodeError:
+                qry = u"ALTER TABLE \"{}\" RENAME COLUMN \"{}\" TO \"{}\"".format(inLayer.GetName(), key, list_col[key])
+                inDataSource.ExecuteSQL(qry)
+        except BaseException as e:
+            logger.exception(e)
             raise GeoNodeException(
                 "Could not decode SHAPEFILE attributes by using the specified charset '{}'.".format(charset))
     return True, None, list_col
@@ -1146,7 +1224,6 @@ def id_to_obj(id_):
     for obj in gc.get_objects():
         if id(obj) == id_:
             return obj
-            break
     raise Exception("Not found")
 
 
@@ -1347,8 +1424,8 @@ def check_ogc_backend(backend_package):
 class HttpClient(object):
 
     def __init__(self):
-        self.timeout = 5
-        self.retries = 5
+        self.timeout = 30
+        self.retries = 3
         self.pool_maxsize = 10
         self.backoff_factor = 0.3
         self.pool_connections = 10
@@ -1367,12 +1444,12 @@ class HttpClient(object):
             self.username = ogc_server_settings['USER'] if 'USER' in ogc_server_settings else 'admin'
             self.password = ogc_server_settings['PASSWORD'] if 'PASSWORD' in ogc_server_settings else 'geoserver'
 
-    def request(self, url, method='GET', data=None, headers={}, stream=False, timeout=None, user=None):
+    def request(self, url, method='GET', data=None, headers={}, stream=False, timeout=None, retries=None, user=None):
         if (user or self.username != 'admin') and \
         check_ogc_backend(geoserver.BACKEND_PACKAGE) and 'Authorization' not in headers:
             if connection.cursor().db.vendor not in ('sqlite', 'sqlite3', 'spatialite'):
                 try:
-                    if user and isinstance(user, basestring):
+                    if user and isinstance(user, six.string_types):
                         user = get_user_model().objects.get(username=user)
                     _u = user or get_user_model().objects.get(username=self.username)
                     access_token = get_or_create_token(_u)
@@ -1384,16 +1461,16 @@ class HttpClient(object):
                     pass
             elif user == self.username:
                 valid_uname_pw = base64.b64encode(
-                    b"%s:%s" % (self.username, self.password)).decode("ascii")
+                    "{}:{}".format(self.username, self.password).encode()).decode()
                 headers['Authorization'] = 'Basic {}'.format(valid_uname_pw)
 
         response = None
         content = None
         session = requests.Session()
         retry = Retry(
-            total=self.retries,
-            read=self.retries,
-            connect=self.retries,
+            total=retries or self.retries,
+            read=retries or self.retries,
+            connect=retries or self.retries,
             backoff_factor=self.backoff_factor,
             status_forcelist=self.status_forcelist,
         )
@@ -1402,12 +1479,12 @@ class HttpClient(object):
             pool_maxsize=self.pool_maxsize,
             pool_connections=self.pool_connections
         )
-        session.mount("{scheme}://".format(scheme=urlparse.urlsplit(url).scheme), adapter)
+        session.mount("{scheme}://".format(scheme=urlsplit(url).scheme), adapter)
         session.verify = False
         action = getattr(session, method.lower(), None)
         if action:
             response = action(
-                url=urllib.unquote(url).decode('utf8'),
+                url=unquote(url),
                 data=data,
                 headers=headers,
                 timeout=timeout or self.timeout,
@@ -1416,7 +1493,7 @@ class HttpClient(object):
             response = session.get(url, headers=headers, timeout=self.timeout)
 
         try:
-            content = response.content if not stream else response.raw
+            content = ensure_string(response.content) if not stream else response.raw
         except BaseException:
             content = None
 
@@ -1551,24 +1628,23 @@ def slugify_zh(text, separator='_'):
 def set_resource_default_links(instance, layer, prune=False, **kwargs):
 
     from geonode.base.models import Link
-    from urlparse import urljoin
-    from django.core.urlresolvers import reverse
+    from django.urls import reverse
     from django.utils.translation import ugettext
 
     # Prune old links
     if prune:
-        logger.info(" -- Resource Links[Prune old links]...")
+        logger.debug(" -- Resource Links[Prune old links]...")
         _def_link_types = (
             'data', 'image', 'original', 'html', 'OGC:WMS', 'OGC:WFS', 'OGC:WCS')
         Link.objects.filter(resource=instance.resourcebase_ptr, link_type__in=_def_link_types).delete()
-        logger.info(" -- Resource Links[Prune old links]...done!")
+        logger.debug(" -- Resource Links[Prune old links]...done!")
 
     if check_ogc_backend(geoserver.BACKEND_PACKAGE):
         from geonode.geoserver.ows import wcs_links, wfs_links, wms_links
         from geonode.geoserver.helpers import ogc_server_settings, gs_catalog
 
         # Compute parameters for the new links
-        logger.info(" -- Resource Links[Compute parameters for the new links]...")
+        logger.debug(" -- Resource Links[Compute parameters for the new links]...")
         height = 550
         width = 550
 
@@ -1583,6 +1659,11 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                 gs_resource = gs_catalog.get_resource(
                     name=instance.name,
                     workspace=instance.workspace)
+                if not gs_resource:
+                    gs_resource = gs_catalog.get_resource(
+                        name=instance.name,
+                        store=instance.store,
+                        workspace=instance.workspace)
                 if not gs_resource:
                     gs_resource = gs_catalog.get_resource(name=instance.name)
                 bbox = gs_resource.native_bbox
@@ -1599,7 +1680,7 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
 
         # Create Raw Data download link
         if settings.DISPLAY_ORIGINAL_DATASET_LINK:
-            logger.info(" -- Resource Links[Create Raw Data download link]...")
+            logger.debug(" -- Resource Links[Create Raw Data download link]...")
             download_url = urljoin(settings.SITEURL,
                                    reverse('download', args=[instance.id]))
             Link.objects.update_or_create(
@@ -1612,15 +1693,15 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                     link_type='original',
                 )
             )
-            logger.info(" -- Resource Links[Create Raw Data download link]...done!")
+            logger.debug(" -- Resource Links[Create Raw Data download link]...done!")
         else:
             Link.objects.filter(resource=instance.resourcebase_ptr,
                                 name='Original Dataset').delete()
 
         # Set download links for WMS, WCS or WFS and KML
-        logger.info(" -- Resource Links[Set download links for WMS, WCS or WFS and KML]...")
+        logger.debug(" -- Resource Links[Set download links for WMS, WCS or WFS and KML]...")
         links = wms_links(ogc_server_settings.public_url + 'ows?',
-                          instance.alternate.encode('utf-8'),
+                          instance.alternate,
                           bbox,
                           srid,
                           height,
@@ -1649,7 +1730,7 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
 
         if instance.storeType == "dataStore":
             links = wfs_links(ogc_server_settings.public_url + 'ows?',
-                              instance.alternate.encode('utf-8'),
+                              instance.alternate,
                               bbox=None,  # bbox filter should be set at runtime otherwise conflicting with CQL
                               srid=srid)
             for ext, name, mime, wfs_url in links:
@@ -1671,7 +1752,7 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
 
         elif instance.storeType == 'coverageStore':
             links = wcs_links(ogc_server_settings.public_url + 'wcs?',
-                              instance.alternate.encode('utf-8'),
+                              instance.alternate,
                               bbox,
                               srid)
 
@@ -1707,10 +1788,10 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                     mime='text/html',
                 )
             )
-        logger.info(" -- Resource Links[Set download links for WMS, WCS or WFS and KML]...done!")
+        logger.debug(" -- Resource Links[Set download links for WMS, WCS or WFS and KML]...done!")
 
         # Legend link
-        logger.info(" -- Resource Links[Legend link]...")
+        logger.debug(" -- Resource Links[Legend link]...")
         for style in instance.styles.all():
             legend_url = ogc_server_settings.PUBLIC_LOCATION + \
                 'ows?service=WMS&request=GetLegendGraphic&format=image/png&WIDTH=20&HEIGHT=20&LAYER=' + \
@@ -1729,12 +1810,11 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                         link_type='image',
                     )
                 )
-        logger.info(" -- Resource Links[Legend link]...done!")
+        logger.debug(" -- Resource Links[Legend link]...done!")
 
         # Thumbnail link
-        logger.info(" -- Resource Links[Thumbnail link]...")
-        from django.contrib.staticfiles.templatetags import staticfiles
-        if instance.get_thumbnail_url() == staticfiles.static(settings.MISSING_THUMBNAIL):
+        logger.debug(" -- Resource Links[Thumbnail link]...")
+        if os.path.splitext(settings.MISSING_THUMBNAIL)[0] in instance.get_thumbnail_url():
             from geonode.geoserver.helpers import create_gs_thumbnail
             create_gs_thumbnail(instance, overwrite=True, check_bbox=True)
         else:
@@ -1748,9 +1828,9 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                     link_type='image',
                 )
             )
-        logger.info(" -- Resource Links[Thumbnail link]...done!")
+        logger.debug(" -- Resource Links[Thumbnail link]...done!")
 
-        logger.info(" -- Resource Links[OWS Links]...")
+        logger.debug(" -- Resource Links[OWS Links]...")
         # ogc_wms_path = '%s/ows' % instance.workspace
         ogc_wms_path = 'ows'
         ogc_wms_url = urljoin(ogc_server_settings.public_url, ogc_wms_path)
@@ -1803,7 +1883,7 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                         link_type='OGC:WCS',
                     )
                 )
-        logger.info(" -- Resource Links[OWS Links]...done!")
+        logger.debug(" -- Resource Links[OWS Links]...done!")
     elif check_ogc_backend(qgis_server.BACKEND_PACKAGE):
         from geonode.layers.models import LayerFile
         from geonode.qgis_server.helpers import (
@@ -1931,8 +2011,8 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
             internal=True)
 
         logger.debug('Creating the QGIS Project : %s' % response.url)
-        if response.content != 'OK':
-            logger.debug('Result : %s' % response.content)
+        if ensure_string(response.content) != 'OK':
+            logger.debug('Result : %s' % ensure_string(response.content))
 
         # Generate style model cache
         style_list(instance, internal=False)
@@ -1990,3 +2070,45 @@ def set_resource_default_links(instance, layer, prune=False, **kwargs):
                 link_type='image',
             )
         )
+
+
+def add_url_params(url, params):
+    """ Add GET params to provided URL being aware of existing.
+
+    :param url: string of target URL
+    :param params: dict containing requested params to be added
+    :return: string with updated URL
+
+    >> url = 'http://stackoverflow.com/test?answers=true'
+    >> new_params = {'answers': False, 'data': ['some','values']}
+    >> add_url_params(url, new_params)
+    'http://stackoverflow.com/test?data=some&data=values&answers=false'
+    """
+    # Unquoting URL first so we don't loose existing args
+    url = unquote(url)
+    # Extracting url info
+    parsed_url = urlparse(url)
+    # Extracting URL arguments from parsed URL
+    get_args = parsed_url.query
+    # Converting URL arguments to dict
+    parsed_get_args = dict(parse_qsl(get_args))
+    # Merging URL arguments dict with new params
+    parsed_get_args.update(params)
+
+    # Bool and Dict values should be converted to json-friendly values
+    # you may throw this part away if you don't like it :)
+    parsed_get_args.update(
+        {k: json.dumps(v) for k, v in parsed_get_args.items()
+         if isinstance(v, (bool, dict))}
+    )
+
+    # Converting URL argument to proper query string
+    encoded_get_args = urlencode(parsed_get_args, doseq=True)
+    # Creating new parsed result object based on provided with new
+    # URL arguments. Same thing happens inside of urlparse.
+    new_url = ParseResult(
+        parsed_url.scheme, parsed_url.netloc, parsed_url.path,
+        parsed_url.params, encoded_get_args, parsed_url.fragment
+    ).geturl()
+
+    return new_url

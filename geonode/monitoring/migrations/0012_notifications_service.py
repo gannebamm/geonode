@@ -14,11 +14,12 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name='metric',
             name='type',
-            field=models.CharField(default=b'rate', max_length=255, choices=[(b'rate', b'Rate'), (b'count', b'Count'), (b'value', b'Value'), (b'value_numeric', b'Value numeric')]),
+            field=models.CharField(default='rate', max_length=255, choices=[('rate','Rate'), ('count','Count'), ('value','Value'), ('value_numeric','Value numeric')]),
         ),
         migrations.AlterField(
             model_name='metricnotificationcheck',
             name='service',
-            field=models.ForeignKey(related_name='checks', blank=True, to='monitoring.Service', null=True),
+            field=models.ForeignKey(related_name='checks', blank=True, to='monitoring.Service',
+                                    on_delete=models.CASCADE, null=True),
         ),
     ]

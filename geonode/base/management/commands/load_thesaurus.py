@@ -91,10 +91,10 @@ class Command(BaseCommand):
             raise CommandError("ConceptScheme not found in file")
 
         title = scheme.find('dc:title', ns).text
-        descr = scheme.find('dc:description', ns).text
+        descr = scheme.find('dc:description', ns).text if scheme.find('dc:description', ns) else title
         date_issued = scheme.find('dcterms:issued', ns).text
 
-        print 'Thesaurus "{}" issued on {}'.format(title, date_issued)
+        print('Thesaurus "{}" issued on {}'.format(title, date_issued))
 
         thesaurus = Thesaurus()
         thesaurus.identifier = name
@@ -110,7 +110,7 @@ class Command(BaseCommand):
             about = concept.attrib.get(ABOUT_ATTRIB)
             alt_label = concept.find('skos:altLabel', ns).text
 
-            print 'Concept {} ({})'.format(alt_label, about)
+            print('Concept {} ({})'.format(alt_label, about))
 
             tk = ThesaurusKeyword()
             tk.thesaurus = thesaurus
@@ -124,7 +124,7 @@ class Command(BaseCommand):
                 lang = pref_label.attrib.get(LANG_ATTRIB)
                 label = pref_label.text
 
-                print u'    Label {}: {}'.format(lang, label)
+                print('    Label {}: {}'.format(lang, label))
 
                 tkl = ThesaurusKeywordLabel()
                 tkl.keyword = tk

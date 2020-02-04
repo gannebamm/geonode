@@ -22,7 +22,6 @@ from geonode.base.forms import ResourceBaseForm
 import json
 import os
 import re
-from autocomplete_light.registry import autodiscover
 
 from django import forms
 from django.utils.translation import ugettext as _
@@ -38,8 +37,6 @@ from geonode.documents.models import (
 )
 from geonode.maps.models import Map
 from geonode.layers.models import Layer
-
-autodiscover()  # flake8: noqa
 
 
 class DocumentFormMixin(object):
@@ -109,9 +106,9 @@ class DocumentForm(ResourceBaseForm, DocumentFormMixin):
 
 
 class DocumentDescriptionForm(forms.Form):
-    title = forms.CharField(300)
-    abstract = forms.CharField(2000, widget=forms.Textarea, required=False)
-    keywords = forms.CharField(500, required=False)
+    title = forms.CharField(max_length=300)
+    abstract = forms.CharField(max_length=2000, widget=forms.Textarea, required=False)
+    keywords = forms.CharField(max_length=500, required=False)
 
 
 class DocumentReplaceForm(forms.ModelForm):

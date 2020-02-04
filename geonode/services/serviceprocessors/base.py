@@ -21,14 +21,26 @@
 
 import logging
 
+try:
+    from urllib.parse import quote
+except ImportError:
+    # Python 2 compatibility
+    from urllib import quote
+
 from django.conf import settings
-from django.core.urlresolvers import reverse
-from geoserver.catalog import Catalog
+from django.urls import reverse
 from six.moves.urllib.parse import urlencode, urlparse, urljoin, parse_qs, urlunparse
-from urllib import quote
+
+from geonode import geoserver
+from geonode.utils import check_ogc_backend
 
 from .. import enumerations
 from .. import models
+
+if check_ogc_backend(geoserver.BACKEND_PACKAGE):
+    from geonode.geoserver.helpers import gs_catalog as catalog
+else:
+    catalog = None
 
 logger = logging.getLogger(__name__)
 
@@ -80,16 +92,8 @@ def get_proxified_ows_url(url, version=None, proxy_base=None):
 
 def get_geoserver_cascading_workspace(create=True):
     """Return the geoserver workspace used for cascaded services
-
     The workspace can be created it if needed.
-
     """
-
-    catalog = Catalog(
-        service_url=settings.OGC_SERVER["default"]["LOCATION"] + "rest",
-        username=settings.OGC_SERVER["default"]["USER"],
-        password=settings.OGC_SERVER["default"]["PASSWORD"]
-    )
     name = getattr(settings, "CASCADE_WORKSPACE", "cascaded-services")
     workspace = catalog.get_workspace(name)
     if workspace is None and create:
@@ -121,13 +125,11 @@ class ServiceHandlerBase(object):
 
     def create_geonode_service(self, owner, parent=None):
         """Create a new geonode.service.models.Service instance
-
         Saving the service instance in the database is not a concern of this
         method, it only deals with creating the instance.
 
         :arg owner: The user who will own the service instance
         :type owner: geonode.people.models.Profile
-
         """
 
         raise NotImplementedError
@@ -145,7 +147,6 @@ class ServiceHandlerBase(object):
 
     def harvest_resource(self, resource_id, geonode_service):
         """Harvest a single resource from the service
-
         This method creates new ``geonode.layers.models.Layer``
         instances (and their related objects too) and save them in the
         database.
@@ -154,7 +155,6 @@ class ServiceHandlerBase(object):
         :type resource_id: str
         :arg geonode_service: The already saved service instance
         :type geonode_service: geonode.services.models.Service
-
         """
 
         raise NotImplementedError

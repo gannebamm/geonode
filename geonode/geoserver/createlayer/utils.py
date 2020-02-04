@@ -23,16 +23,17 @@ import uuid
 import logging
 import json
 
+from six import string_types
+
 from django.template.defaultfilters import slugify
 
-from geoserver.catalog import Catalog
 from geoserver.catalog import FailedRequestError
 
 from geonode import GeoNodeException
 from geonode.layers.models import Layer
 from geonode.layers.utils import get_valid_name
 from geonode.people.models import Profile
-from geonode.geoserver.helpers import ogc_server_settings
+from geonode.geoserver.helpers import gs_catalog, ogc_server_settings
 
 
 logger = logging.getLogger(__name__)
@@ -166,7 +167,7 @@ def get_or_create_datastore(cat, workspace=None, charset="UTF-8"):
          'fetch size': '1000',
          'host': db['HOST'],
          'port': db['PORT'] if isinstance(
-             db['PORT'], basestring) else str(db['PORT']) or '5432',
+             db['PORT'], string_types) else str(db['PORT']) or '5432',
          'database': db['NAME'],
          'user': db['USER'],
          'passwd': db['PASSWORD'],
@@ -189,9 +190,7 @@ def create_gs_layer(name, title, geometry_type, attributes=None):
     """
 
     native_name = name
-    gs_user = ogc_server_settings.credentials[0]
-    gs_password = ogc_server_settings.credentials[1]
-    cat = Catalog(ogc_server_settings.internal_rest, gs_user, gs_password)
+    cat = gs_catalog
 
     # get workspace and store
     workspace = cat.get_default_workspace()
@@ -241,9 +240,10 @@ def create_gs_layer(name, title, geometry_type, attributes=None):
         attributes=attributes_block)
 
     url = ('%s/workspaces/%s/datastores/%s/featuretypes'
-           % (ogc_server_settings.internal_rest, workspace.name, datastore.name))
+           % (ogc_server_settings.rest, workspace.name, datastore.name))
     headers = {'Content-Type': 'application/xml'}
-    req = requests.post(url, data=xml, headers=headers, auth=(gs_user, gs_password))
+    _user, _password = ogc_server_settings.credentials
+    req = requests.post(url, data=xml, headers=headers, auth=(_user, _password))
     if req.status_code != 201:
         logger.error('Request status code was: %s' % req.status_code)
         logger.error('Response was: %s' % req.text)

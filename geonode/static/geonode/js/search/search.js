@@ -55,7 +55,7 @@
   module.load_group_categories = function ($http, $rootScope, $location){
         var params = typeof FILTER_TYPE == 'undefined' ? {} : {'type': FILTER_TYPE};
         $http.get(GROUP_CATEGORIES_ENDPOINT, {params: params}).then(successCallback, errorCallback);
-        
+
         function successCallback(data) {
           //success code
           $rootScope.groupCategories = data.data.objects;
@@ -75,7 +75,7 @@
           params['title__icontains'] = $location.search()['title__icontains'];
         }
         $http.get(KEYWORDS_ENDPOINT, {params: params}).then(successCallback, errorCallback);
-        
+
         function successCallback(data) {
           //success code
           debugger;
@@ -94,10 +94,11 @@
         };
     }
 
+
   module.load_h_keywords = function($http, $rootScope, $location){
     var params = typeof FILTER_TYPE == 'undefined' ? {} : {'type': FILTER_TYPE};
     $http.get(H_KEYWORDS_ENDPOINT, {params: params}).then(successCallback, errorCallback);
-        
+
     function successCallback(data) {
       //success code
       $('#treeview').treeview({
@@ -133,8 +134,10 @@
     if ($location.search().hasOwnProperty('title__icontains')){
       params['title__icontains'] = $location.search()['title__icontains'];
     }
-    $http.get(T_KEYWORDS_ENDPOINT, {params: params}).then(successCallback, errorCallback);
-    
+    if (enable_thesauri){
+      $http.get(T_KEYWORDS_ENDPOINT, {params: params}).then(successCallback, errorCallback);
+    }
+
     function successCallback(data) {
       //success code
       if($location.search().hasOwnProperty('tkeywords__id__in')){
@@ -158,7 +161,7 @@
       params['title__icontains'] = $location.search()['title__icontains'];
     }
     $http.get(REGIONS_ENDPOINT, {params: params}).then(successCallback, errorCallback);
-    
+
     function successCallback(data) {
         //success code
         if($location.search().hasOwnProperty('regions__name__in')){
@@ -179,7 +182,7 @@
     module.load_groups = function ($http, $rootScope, $location){
       var params = typeof FILTER_TYPE == 'undefined' ? {} : {'type': FILTER_TYPE};
       $http.get(GROUPS_ENDPOINT, {params: params}).then(successCallback, errorCallback);
-      
+
       function successCallback(data) {
         //success code
         $rootScope.groups = data.data.objects;
@@ -199,7 +202,7 @@
           params['title__icontains'] = $location.search()['title__icontains'];
       }
       $http.get(OWNERS_ENDPOINT, {params: params}).then(successCallback, errorCallback);
-      
+
       function successCallback(data) {
         //success code
         if($location.search().hasOwnProperty('owner__username__in')){
@@ -355,7 +358,7 @@
     //Get data from apis and make them available to the page
     function query_api(data){
       $http.get(Configs.url, {params: data || {}}).then(successCallback, errorCallback);
-      
+
       function successCallback(data) {
         //success code
         setTimeout(function(){$('[ng-controller="CartList"] [data-toggle="tooltip"]').tooltip();},0);
@@ -369,6 +372,9 @@
         } else {
           if ($location.search().hasOwnProperty('title__icontains')){
             $scope.text_query = $location.search()['title__icontains'].replace(/\+/g," ");
+          }
+          if ($location.search().hasOwnProperty('name__icontains')){
+            $scope.text_query = $location.search()['name__icontains'].replace(/\+/g," ");
           }
         }
 
@@ -581,26 +587,8 @@
       }
     }
 
-    /*
-    * Text search management
-    */
-    var text_autocomplete = $('#text_search_input').yourlabsAutocomplete({
-          url: AUTOCOMPLETE_URL_RESOURCEBASE,
-          choiceSelector: 'span',
-          hideAfter: 200,
-          minimumCharacters: 1,
-          placeholder: gettext('Enter your text here ...'),
-          autoHilightFirst: false
-    });
 
-    $('#text_search_input').keypress(function(e) {
-      if(e.which == 13) {
-        $('#text_search_btn').click();
-        $('.yourlabs-autocomplete').hide();
-      }
-    });
-
-    $('#text_search_input').bind('selectChoice', function(e, choice, text_autocomplete) {
+    $('#text_search_input').bind('selectChoice', function(e, choice) {
           if(choice[0].children[0] == undefined) {
               $('#text_search_input').val($(choice[0]).text());
               $('#text_search_btn').click();
@@ -608,31 +596,33 @@
     });
 
     $('#text_search_btn').click(function(){
-        if (HAYSTACK_SEARCH)
+        if (HAYSTACK_SEARCH) {
             $scope.query['q'] = $('#text_search_input').val();
-        else
-            if (AUTOCOMPLETE_URL_RESOURCEBASE == "/autocomplete/ProfileAutocomplete/")
+        } else {
+            if (AUTOCOMPLETE_URL_RESOURCEBASE == "/people/autocomplete/") { // updated url to work with new autocomplete backend format
                 // a user profile has no title; if search was triggered from
                 // the /people page, filter by username instead
                 var query_key = 'username__icontains';
-            else
-                console.log('search key', $('#text_search_input').data());
+            } else if (AUTOCOMPLETE_URL_RESOURCEBASE == "/groups/autocomplete_category/" || AUTOCOMPLETE_URL_RESOURCEBASE == "/groups/autocomplete/" ) {
+                // Adding in this conditional since both groups autocomplete and searches requests need to search name not title.
+                var query_key = 'name__icontains';
+            } else {
                 var query_key = $('#text_search_input').data('query-key')||'title__icontains';
-            $scope.query[query_key] = $('#text_search_input').val();
+            }
+
+            // Groups searching by name requires the query text to be in the form 'test-name' the autocomplete returns the title of the groupprofile
+            // but the backend currently searches group.name field.
+            // There might be a better way to use the query key along the lines of 'groupprofile___title__icontains' as this should be supported on backend.
+            // Testing this method so far did not seem to work though.
+            if (AUTOCOMPLETE_URL_RESOURCEBASE == "/groups/autocomplete/" ) {
+              $scope.query[query_key] = $('#text_search_input').val().toLowerCase().replace(/ /g,"-");
+            } else {
+              $scope.query[query_key] = $('#text_search_input').val();
+            }
         query_api($scope.query);
+        }
     });
 
-    /*
-    * Region search management
-    */
-    var region_autocomplete = $('#region_search_input').yourlabsAutocomplete({
-          url: AUTOCOMPLETE_URL_REGION,
-          choiceSelector: 'span',
-          hideAfter: 200,
-          minimumCharacters: 1,
-          appendAutocomplete: $('#region_search_input'),
-          placeholder: gettext('Enter your region here ...')
-    });
     $('#region_search_input').bind('selectChoice', function(e, choice, region_autocomplete) {
           if(choice[0].children[0] == undefined) {
               $('#region_search_input').val(choice[0].innerHTML);

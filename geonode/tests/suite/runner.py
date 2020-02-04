@@ -1,10 +1,12 @@
+from __future__ import print_function
+
 import sys
 import time
 import logging
 import multiprocessing
 
 from multiprocessing import Process, Queue, Event
-from Queue import Empty
+from queue import Empty
 
 from twisted.scripts.trial import Options, _getSuite
 from twisted.trial.runner import TrialRunner
@@ -135,12 +137,12 @@ class ParallelTestSuiteRunner(object):
             group_tests = tests[group]
             del tests[group]
 
-            logger.info('Running tests in a main process: %s' % (group_tests))
+            logger.debug('Running tests in a main process: %s' % (group_tests))
             pending_not_thread_safe_tests[group] = group_tests
             result = self._tests_func(tests=group_tests, worker_index=None)
             results_queue.put((group, result), block=False)
 
-        for group, tests in tests.iteritems():
+        for group, tests in tests.items():
             tests_queue.put((group, tests), block=False)
             pending_tests[group] = tests
 
@@ -165,13 +167,13 @@ class ParallelTestSuiteRunner(object):
             worker_count = worker_max
 
         worker_args = (tests_queue, results_queue, stop_event)
-        logger.info("Number of workers %s " % worker_count)
+        logger.debug("Number of workers %s " % worker_count)
         workers = self._create_worker_pool(pool_size=worker_count,
                                            target_func=self._run_tests_worker,
                                            worker_args=worker_args)
 
         for index, worker in enumerate(workers):
-            logger.info('Staring worker %s' % (index))
+            logger.debug('Staring worker %s' % (index))
             worker.start()
 
         if workers:
@@ -189,7 +191,7 @@ class ParallelTestSuiteRunner(object):
                         else:
                             pending_not_thread_safe_tests.pop(group)
                     except KeyError:
-                        logger.info('Got a result for unknown group: %s' % (group))
+                        logger.debug('Got a result for unknown group: %s' % (group))
                     else:
                         completed_tests[group] = result
                         self._print_result(result)
@@ -236,14 +238,14 @@ class ParallelTestSuiteRunner(object):
 
                     try:
                         result = None
-                        logger.info(
+                        logger.debug(
                             'Worker %s is running tests %s' %
                             (index, tests))
                         result = self._tests_func(
                             tests=tests, worker_index=index)
 
                         results_queue.put((group, result))
-                        logger.info(
+                        logger.debug(
                             'Worker %s has finished running tests %s' %
                             (index, tests))
                     except (KeyboardInterrupt, SystemExit):
@@ -257,19 +259,18 @@ class ParallelTestSuiteRunner(object):
                         import traceback
                         tb = traceback.format_exc()
                         logger.error(tb)
-                        logger.info('Running tests failed, reason: %s' % (str(e)))
+                        logger.debug('Running tests failed, reason: %s' % (str(e)))
 
                         result = TestResult().from_exception(e)
                         results_queue.put((group, result))
             except Empty:
-                logger.info(
+                logger.debug(
                     'Worker %s timed out while waiting for tests to run' %
                     (index))
         finally:
             tests_queue.close()
             results_queue.close()
-
-        logger.info('Worker %s is stopping' % (index))
+        logger.debug('Worker %s is stopping' % (index))
 
     def _pre_tests_func(self):
         # This method gets called before _tests_func is called
@@ -284,12 +285,12 @@ class ParallelTestSuiteRunner(object):
         raise '_tests_func not implements'
 
     def _print_result(self, result):
-        print >> sys.stderr, result.output
+        print(result.output, file=sys.stderr)
 
     def _exit(self, start_time, end_time, failure_count, error_count):
         time_difference = (end_time - start_time)
 
-        print >> sys.stderr, 'Total run time: %d seconds' % (time_difference)
+        print("Total run time: {} seconds".format(time_difference), file=sys.stderr)
         try:
             sys.exit(failure_count + error_count)
         except Exception:
@@ -338,7 +339,7 @@ class ParallelTestSuiteRunner(object):
 
     def log(self, string):
         if self.verbosity >= 3:
-            print string
+            print(string)
 
 
 class DjangoParallelTestSuiteRunner(ParallelTestSuiteRunner,
@@ -446,7 +447,7 @@ class DjangoParallelTestSuiteRunner(ParallelTestSuiteRunner,
         old_names = []
         mirrors = []
         for signature, (db_name, aliases) in self.dependency_ordered(
-                test_databases.items(), dependencies):
+                list(test_databases.items()), dependencies):
             connection = connections[aliases[0]]
             old_names.append((connection, db_name, True))
             test_db_name = connection.creation.create_test_db(

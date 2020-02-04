@@ -1,7 +1,7 @@
 {% extends "documents/document_base.html" %}
 {% load i18n %}
 {% load dialogos_tags %}
-{% load agon_ratings_tags %}
+{% load pinax_ratings_tags %}
 {% load bootstrap_tags %}
 {% load base_tags %}
 {% load guardian_tags %}
@@ -251,17 +251,6 @@
     {% endif %}
     {% include 'rating.html' %}
     {% include 'request_download.html' %}
-    {% if DISPLAY_SOCIAL %}
-    <script type="text/javascript">
-    {% autoescape off %}
-        (function() {
-            var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true;
-            po.src = 'https://apis.google.com/js/plusone.js';
-            var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
-        })();
-    {% endautoescape %}
-    </script>
-    {% endif %}
     {% include "_permissions_form_js.html" %}
 
     {% if FAVORITE_ENABLED %}

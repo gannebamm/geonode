@@ -22,21 +22,15 @@ from geonode.base.forms import ResourceBaseForm
 import os
 import tempfile
 import zipfile
-from autocomplete_light.registry import autodiscover
 
 from django import forms
 
 from geonode import geoserver, qgis_server
 from geonode.utils import check_ogc_backend
 
-try:
-    import json
-except ImportError:
-    from django.utils import simplejson as json
+import json
 from geonode.utils import unzip_file
 from geonode.layers.models import Layer, Attribute
-
-autodiscover()  # flake8: noqa
 
 
 class JSONField(forms.CharField):
@@ -254,12 +248,12 @@ class NewLayerUploadForm(LayerUploadForm):
 
 
 class LayerDescriptionForm(forms.Form):
-    title = forms.CharField(300)
-    abstract = forms.CharField(2000, widget=forms.Textarea, required=False)
-    supplemental_information = forms.CharField(2000, widget=forms.Textarea, required=False)
-    data_quality_statement = forms.CharField(2000, widget=forms.Textarea, required=False)
-    purpose = forms.CharField(500, required=False)
-    keywords = forms.CharField(500, required=False)
+    title = forms.CharField(max_length=300, required=True)
+    abstract = forms.CharField(max_length=2000, widget=forms.Textarea, required=False)
+    supplemental_information = forms.CharField(max_length=2000, widget=forms.Textarea, required=False)
+    data_quality_statement = forms.CharField(max_length=2000, widget=forms.Textarea, required=False)
+    purpose = forms.CharField(max_length=500, required=False)
+    keywords = forms.CharField(max_length=500, required=False)
 
 
 class LayerAttributeForm(forms.ModelForm):

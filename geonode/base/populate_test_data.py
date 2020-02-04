@@ -18,8 +18,7 @@
 #
 #########################################################################
 
-import StringIO
-
+from io import BytesIO
 from datetime import datetime
 from datetime import timedelta
 from django.core.serializers import serialize
@@ -28,11 +27,11 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from geonode.layers.models import Layer
 from geonode.base.models import TopicCategory
-from geonode.maps.models import Map, MapLayer
+from geonode.maps.models import Map
 from geonode.documents.models import Document
 from geonode.people.models import Profile
+from geonode.compat import ensure_string
 from geonode import geoserver, qgis_server  # noqa
-from geonode.utils import check_ogc_backend
 from itertools import cycle
 from taggit.models import Tag
 from taggit.models import TaggedItem
@@ -40,42 +39,14 @@ from uuid import uuid4
 import os.path
 import six
 
-
-def disconnect_signals():
-    """Disconnect signals for test class purposes."""
-    from django.db.models import signals
-    from geonode.geoserver.signals import geoserver_pre_save_maplayer
-    from geonode.geoserver.signals import geoserver_post_save_map
-    from geonode.geoserver.signals import geoserver_pre_save
-    from geonode.geoserver.signals import geoserver_post_save
-    signals.pre_save.disconnect(geoserver_pre_save_maplayer, sender=MapLayer)
-    signals.post_save.disconnect(geoserver_post_save_map, sender=Map)
-    signals.pre_save.disconnect(geoserver_pre_save, sender=Layer)
-    signals.post_save.disconnect(geoserver_post_save, sender=Layer)
-
-
-def reconnect_signals():
-    """Reconnect signals for test class purposes."""
-    from django.db.models import signals
-    from geonode.geoserver.signals import geoserver_pre_save_maplayer
-    from geonode.geoserver.signals import geoserver_post_save_map
-    from geonode.geoserver.signals import geoserver_pre_save
-    from geonode.geoserver.signals import geoserver_post_save
-    signals.pre_save.connect(geoserver_pre_save_maplayer, sender=MapLayer)
-    signals.post_save.connect(geoserver_post_save_map, sender=Map)
-    signals.pre_save.connect(geoserver_pre_save, sender=Layer)
-    signals.post_save.connect(geoserver_post_save, sender=Layer)
-
-
-if check_ogc_backend(geoserver.BACKEND_PACKAGE):
-    disconnect_signals()
-
 # This is used to populate the database with the search fixture data. This is
 # primarily used as a first step to generate the json data for the fixture using
 # django's dumpdata
 
-imgfile = StringIO.StringIO('GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00ccc,\x00'
-                            '\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;')
+imgfile = BytesIO(
+    b'GIF87a\x01\x00\x01\x00\x80\x01\x00\x00\x00\x00ccc,\x00'
+    b'\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;'
+)
 f = SimpleUploadedFile('test_img_file.gif', imgfile.read(), 'image/gif')
 
 
@@ -191,7 +162,7 @@ def create_models(type=None):
     get_user_model().objects.get(username='AnonymousUser').groups.add(anonymous_group)
 
     obj_ids = []
-    if not type or type == 'map':
+    if not type or ensure_string(type) == 'map':
         for md, user in zip(map_data, cycle(users)):
             title, abstract, kws, (bbox_x0, bbox_x1, bbox_y0, bbox_y1), category = md
             m = Map(title=title,
@@ -214,7 +185,7 @@ def create_models(type=None):
                 m.keywords.add(kw)
                 m.save()
 
-    if not type or type == 'document':
+    if not type or ensure_string(type) == 'document':
         for dd, user in zip(document_data, cycle(users)):
             title, abstract, kws, (bbox_x0, bbox_x1, bbox_y0, bbox_y1), category = dd
             m = Document(title=title,
@@ -233,7 +204,7 @@ def create_models(type=None):
                 m.keywords.add(kw)
                 m.save()
 
-    if not type or type == 'layer':
+    if not type or ensure_string(type) == 'layer':
         for ld, owner, storeType in zip(layer_data, cycle(users), cycle(('coverageStore', 'dataStore'))):
             title, abstract, name, alternate, (bbox_x0, bbox_x1, bbox_y0, bbox_y1), start, kws, category = ld
             end = start + timedelta(days=365)
@@ -264,9 +235,9 @@ def create_models(type=None):
 
 def remove_models(obj_ids, type=None):
     if not type:
-        remove_models(None, type='map')
-        remove_models(None, type='layer')
-        remove_models(None, type='document')
+        remove_models(None, type=b'map')
+        remove_models(None, type=b'layer')
+        remove_models(None, type=b'document')
 
     if type == 'map':
         try:

@@ -50,15 +50,20 @@ from gisdata import BAD_DATA
 from gisdata import GOOD_DATA
 from owslib.wms import WebMapService
 from zipfile import ZipFile
+from six import string_types
 
 import re
 import os
 import csv
 import glob
 import time
-import json
-import urllib
-import urllib2
+try:
+    from urllib.parse import unquote
+    from urllib.error import HTTPError
+except ImportError:
+    # Python 2 compatibility
+    from urllib import unquote
+    from urllib2 import HTTPError
 import logging
 import tempfile
 import unittest
@@ -149,7 +154,11 @@ class UploaderBase(GeoNodeLiveTestSupport):
             GEONODE_URL, GEONODE_USER, GEONODE_PASSWD
         )
         self.catalog = Catalog(
-            GEOSERVER_URL + 'rest', GEOSERVER_USER, GEOSERVER_PASSWD
+            GEOSERVER_URL + 'rest',
+            GEOSERVER_USER,
+            GEOSERVER_PASSWD,
+            retries=ogc_server_settings.MAX_RETRIES,
+            backoff_factor=ogc_server_settings.BACKOFF_FACTOR
         )
 
         settings.DATABASES['default']['NAME'] = DB_NAME
@@ -165,7 +174,8 @@ class UploaderBase(GeoNodeLiveTestSupport):
     def tearDown(self):
         connections.databases['default']['ATOMIC_REQUESTS'] = False
 
-        map(os.unlink, self._tempfiles)
+        for temp_file in self._tempfiles:
+            os.unlink(temp_file)
 
         # Cleanup
         Upload.objects.all().delete()
@@ -184,7 +194,7 @@ class UploaderBase(GeoNodeLiveTestSupport):
         # the final url for uploader process. This does a redirect to
         # the final layer page in geonode
         resp, _ = self.client.get_html(path)
-        self.assertTrue(resp.code == 200)
+        self.assertEqual(resp.status_code, 200)
         self.assertTrue('content-type' in resp.headers)
 
     def check_layer_geoserver_caps(self, type_name):
@@ -213,18 +223,17 @@ class UploaderBase(GeoNodeLiveTestSupport):
             self.assertTrue(time_step in redirect_to)
         resp = self.client.make_request(redirect_to)
         token = self.client.get_csrf_token(True)
-        self.assertEquals(resp.code, 200)
+        self.assertEqual(resp.status_code, 200)
         resp = self.client.make_request(
             redirect_to, {'csrfmiddlewaretoken': token}, ajax=True)
-        data = json.loads(resp.read())
-        return resp, data
+        return resp, resp.json()
 
     def complete_raster_upload(self, file_path, resp, data):
         return self.complete_upload(file_path, resp, data, is_raster=True)
 
     def check_save_step(self, resp, data):
         """Verify the initial save step"""
-        self.assertEquals(resp.code, 200)
+        self.assertEqual(resp.status_code, 200)
         self.assertTrue(isinstance(data, dict))
         # make that the upload returns a success True key
         self.assertTrue(data['success'], 'expected success but got %s' % data)
@@ -243,7 +252,7 @@ class UploaderBase(GeoNodeLiveTestSupport):
 
         layer_name, ext = os.path.splitext(os.path.basename(file_path))
 
-        if not isinstance(data, basestring):
+        if not isinstance(data, string_types):
             self.check_save_step(resp, data)
 
             layer_page = self.finish_upload(
@@ -261,8 +270,8 @@ class UploaderBase(GeoNodeLiveTestSupport):
             skip_srs=False):
         if not is_raster and _ALLOW_TIME_STEP:
             resp, data = self.check_and_pass_through_timestep(current_step)
-            self.assertEquals(resp.code, 200)
-            if not isinstance(data, basestring):
+            self.assertEqual(resp.status_code, 200)
+            if not isinstance(data, string_types):
                 if data['success']:
                     self.assertTrue(
                         data['success'],
@@ -281,12 +290,11 @@ class UploaderBase(GeoNodeLiveTestSupport):
             self.assertTrue(upload_step('final') in current_step)
             resp = self.client.get(current_step)
 
-        self.assertEquals(resp.code, 200)
-        resp_js = resp.read()
+        self.assertEqual(resp.status_code, 200)
         try:
-            c = json.loads(resp_js)
+            c = resp.json()
             url = c['url']
-            url = urllib.unquote(url)
+            url = unquote(url)
             # and the final page should redirect to the layer page
             # @todo - make the check match completely (endswith at least)
             # currently working around potential 'orphaned' db tables
@@ -345,37 +353,48 @@ class UploaderBase(GeoNodeLiveTestSupport):
     def check_invalid_projection(self, layer_name, resp, data):
         """ Makes sure that we got the correct response from an layer
         that can't be uploaded"""
-        self.assertTrue(resp.code, 200)
-        if not isinstance(data, basestring):
+        self.assertTrue(resp.status_code, 200)
+        if not isinstance(data, string_types):
             self.assertTrue(data['success'])
-            self.assertTrue(upload_step("srs") in data['redirect_to'])
-            resp, soup = self.client.get_html(data['redirect_to'])
-            # grab an h2 and find the name there as part of a message saying it's
-            # bad
-            h2 = soup.find_all(['h2'])[0]
-            self.assertTrue(str(h2).find(layer_name))
+            srs_step = upload_step("srs")
+            if "srs" in data['redirect_to']:
+                self.assertTrue(srs_step in data['redirect_to'])
+                resp, soup = self.client.get_html(data['redirect_to'])
+                # grab an h2 and find the name there as part of a message saying it's
+                # bad
+                h2 = soup.find_all(['h2'])[0]
+                self.assertTrue(str(h2).find(layer_name))
+
+    def check_upload_complete(self, layer_name, resp, data):
+        """ Makes sure that we got the correct response from an layer
+        that can't be uploaded"""
+        self.assertTrue(resp.status_code, 200)
+        if not isinstance(data, string_types):
+            self.assertTrue(data['success'])
+            final_step = upload_step("final")
+            if "final" in data['redirect_to']:
+                self.assertTrue(final_step in data['redirect_to'])
 
     def upload_folder_of_files(self, folder, final_check, session_ids=None):
 
-        mains = ('.tif', '.shp', '.zip')
+        mains = ('.tif', '.shp', '.zip', '.asc')
 
         def is_main(_file):
             _, ext = os.path.splitext(_file)
             return (ext.lower() in mains)
 
-        main_files = filter(is_main, os.listdir(folder))
-        for main in main_files:
+        for main in filter(is_main, os.listdir(folder)):
             # get the abs path to the file
             _file = os.path.join(folder, main)
             base, _ = os.path.splitext(_file)
             resp, data = self.client.upload_file(_file)
             if session_ids is not None:
-                if not isinstance(data, basestring) and data.get('url'):
+                if not isinstance(data, string_types) and data.get('url'):
                     session_id = re.search(
                         r'.*id=(\d+)', data.get('url')).group(1)
                     if session_id:
                         session_ids += [session_id]
-            if not isinstance(data, basestring):
+            if not isinstance(data, string_types):
                 self.wait_for_progress(data.get('progress'))
             final_check(base, resp, data)
 
@@ -385,13 +404,13 @@ class UploaderBase(GeoNodeLiveTestSupport):
             check_name, _ = os.path.splitext(fname)
         resp, data = self.client.upload_file(fname)
         if session_ids is not None:
-            if not isinstance(data, basestring):
+            if not isinstance(data, string_types):
                 if data.get('url'):
                     session_id = re.search(
                         r'.*id=(\d+)', data.get('url')).group(1)
                     if session_id:
                         session_ids += [session_id]
-        if not isinstance(data, basestring):
+        if not isinstance(data, string_types):
             self.wait_for_progress(data.get('progress'))
         final_check(check_name, resp, data)
 
@@ -399,8 +418,7 @@ class UploaderBase(GeoNodeLiveTestSupport):
         if progress_url:
             resp = self.client.get(progress_url)
             assert resp.getcode() == 200, 'Invalid progress status code'
-            raw_data = resp.read()
-            json_data = json.loads(raw_data)
+            json_data = resp.json()
             # "COMPLETE" state means done
             if json_data.get('state', '') == 'RUNNING':
                 time.sleep(0.1)
@@ -411,13 +429,13 @@ class UploaderBase(GeoNodeLiveTestSupport):
         self._tempfiles.append(abspath)
         return fd, abspath
 
-    def make_csv(self, *rows):
+    def make_csv(self, fieldnames, *rows):
         fd, abspath = self.temp_file('.csv')
-        fp = os.fdopen(fd, 'wb')
-        out = csv.writer(fp)
-        for r in rows:
-            out.writerow(r)
-        fp.close()
+        with open(abspath, 'w', newline='') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for r in rows:
+                writer.writerow(r)
         return abspath
 
 
@@ -525,17 +543,34 @@ class TestUpload(UploaderBase):
         for f in glob.glob(fpath):
             zf.write(f, os.path.basename(f))
         zf.close()
-        self.upload_file(abspath, self.complete_upload,
+        self.upload_file(abspath,
+                         self.complete_upload,
                          check_name='san_andres_y_providencia_poi')
+
+    def test_ascii_grid_upload(self):
+        """ Tests the layers that ASCII grid files are uploaded along with aux"""
+        session_ids = []
+
+        PROJECT_ROOT = os.path.abspath(os.path.dirname(__file__))
+        thelayer_path = os.path.join(
+            PROJECT_ROOT,
+            'data/arc_sample')
+        self.upload_folder_of_files(
+            thelayer_path,
+            self.complete_raster_upload,
+            session_ids=session_ids)
 
     def test_invalid_layer_upload(self):
         """ Tests the layers that are invalid and should not be uploaded"""
         # this issue with this test is that the importer supports
         # shapefiles without an .prj
+        session_ids = []
+
         invalid_path = os.path.join(BAD_DATA)
         self.upload_folder_of_files(
             invalid_path,
-            self.check_invalid_projection)
+            self.check_invalid_projection,
+            session_ids=session_ids)
 
     def test_coherent_importer_session(self):
         """ Tests that the upload computes correctly next session IDs"""
@@ -553,7 +588,8 @@ class TestUpload(UploaderBase):
         invalid_path = os.path.join(BAD_DATA)
         self.upload_folder_of_files(
             invalid_path,
-            self.check_invalid_projection, session_ids=session_ids)
+            self.check_invalid_projection,
+            session_ids=session_ids)
 
         # Finally try to upload a good file anc check the session IDs
         fname = os.path.join(GOOD_DATA, 'raster', 'relief_san_andres.tif')
@@ -576,17 +612,17 @@ class TestUpload(UploaderBase):
         if unsupported_path.endswith('.pyc'):
             unsupported_path = unsupported_path.rstrip('c')
 
-        with self.assertRaises(urllib2.HTTPError):
+        with self.assertRaises(HTTPError):
             self.client.upload_file(unsupported_path)
 
     def test_csv(self):
         '''make sure a csv upload fails gracefully/normally when not activated'''
         csv_file = self.make_csv(
-            ['lat', 'lon', 'thing'], ['-100', '-40', 'foo'])
+            ['lat', 'lon', 'thing'], {'lat': -100, 'lon': -40, 'thing': 'foo'})
         layer_name, ext = os.path.splitext(os.path.basename(csv_file))
         resp, data = self.client.upload_file(csv_file)
-        self.assertEquals(resp.code, 200)
-        if not isinstance(data, basestring):
+        self.assertEqual(resp.status_code, 200)
+        if not isinstance(data, string_types):
             self.assertTrue('success' in data)
             self.assertTrue(data['success'])
             self.assertTrue(data['redirect_to'], "/upload/csv")
@@ -600,11 +636,11 @@ class TestUploadDBDataStore(UploaderBase):
         """Override the baseclass test and verify a correct CSV upload"""
 
         csv_file = self.make_csv(
-            ['lat', 'lon', 'thing'], ['-100', '-40', 'foo'])
+            ['lat', 'lon', 'thing'], {'lat': -100, 'lon': -40, 'thing': 'foo'})
         layer_name, ext = os.path.splitext(os.path.basename(csv_file))
         resp, form_data = self.client.upload_file(csv_file)
-        self.assertEquals(resp.code, 200)
-        if not isinstance(form_data, basestring):
+        self.assertEqual(resp.status_code, 200)
+        if not isinstance(form_data, string_types):
             self.check_save_step(resp, form_data)
             csv_step = form_data['redirect_to']
             self.assertTrue(upload_step('csv') in csv_step)
@@ -613,10 +649,9 @@ class TestUploadDBDataStore(UploaderBase):
                 lng='lon',
                 csrfmiddlewaretoken=self.client.get_csrf_token())
             resp = self.client.make_request(csv_step, form_data)
-            content = json.loads(resp.read())
-            logger.info(content)
-            self.assertEquals(resp.code, 200)
-            self.assertEquals(content['status'], 'incomplete')
+            content = resp.json()
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(content['status'], 'incomplete')
 
     def test_time(self):
         """Verify that uploading time based shapefile works properly"""
@@ -628,41 +663,41 @@ class TestUploadDBDataStore(UploaderBase):
 
         # get to time step
         resp, data = self.client.upload_file(shp)
-        self.assertEquals(resp.code, 200)
-        if not isinstance(data, basestring):
+        self.assertEqual(resp.status_code, 200)
+        if not isinstance(data, string_types):
             self.wait_for_progress(data.get('progress'))
             self.assertTrue(data['success'])
             self.assertTrue(data['redirect_to'], upload_step('time'))
             redirect_to = data['redirect_to']
             resp, data = self.client.get_html(upload_step('time'))
-            self.assertEquals(resp.code, 200)
+            self.assertEqual(resp.status_code, 200)
             data = dict(csrfmiddlewaretoken=self.client.get_csrf_token(),
                         time_attribute='date',
                         presentation_strategy='LIST',
                         )
             resp = self.client.make_request(redirect_to, data)
-            self.assertEquals(resp.code, 200)
-            resp_js = json.loads(resp.read())
+            self.assertEqual(resp.status_code, 200)
+            resp_js = resp.json()
             if resp_js['success']:
                 url = resp_js['redirect_to']
 
                 resp = self.client.make_request(url, data)
 
-                url = json.loads(resp.read())['url']
+                url = resp.json()['url']
 
                 self.assertTrue(
                     url.endswith(layer_name),
                     'expected url to end with %s, but got %s' %
                     (layer_name,
                      url))
-                self.assertEquals(resp.code, 200)
+                self.assertEqual(resp.status_code, 200)
 
-                url = urllib.unquote(url)
+                url = unquote(url)
                 self.check_layer_complete(url, layer_name)
                 wms = get_wms(
                     type_name='geonode:%s' % layer_name, username=GEOSERVER_USER, password=GEOSERVER_PASSWD)
-                layer_info = wms.items()[0][1]
-                self.assertEquals(100, len(layer_info.timepositions))
+                layer_info = list(wms.items())[0][1]
+                self.assertEqual(100, len(layer_info.timepositions))
             else:
                 self.assertTrue('error_msg' in resp_js)
                 self.assertTrue(
@@ -689,44 +724,44 @@ class TestUploadDBDataStore(UploaderBase):
 
         # initial state is no positions or info
         self.assertTrue(get_wms_timepositions() is None)
-        self.assertEquals(resp.code, 200)
+        self.assertEqual(resp.status_code, 200)
 
         # enable using interval and single attribute
-        if not isinstance(data, basestring):
+        if not isinstance(data, string_types):
             self.wait_for_progress(data.get('progress'))
             self.assertTrue(data['success'])
             self.assertTrue(data['redirect_to'], upload_step('time'))
             redirect_to = data['redirect_to']
             resp, data = self.client.get_html(upload_step('time'))
-            self.assertEquals(resp.code, 200)
+            self.assertEqual(resp.status_code, 200)
             data = dict(csrfmiddlewaretoken=self.client.get_csrf_token(),
                         time_attribute='date',
                         time_end_attribute='enddate',
                         presentation_strategy='LIST',
                         )
             resp = self.client.make_request(redirect_to, data)
-            self.assertEquals(resp.code, 200)
-            resp_js = json.loads(resp.read())
+            self.assertEqual(resp.status_code, 200)
+            resp_js = resp.json()
             if resp_js['success']:
                 url = resp_js['redirect_to']
 
                 resp = self.client.make_request(url, data)
 
-                url = json.loads(resp.read())['url']
+                url = resp.json()['url']
 
                 self.assertTrue(
                     url.endswith(layer_name),
                     'expected url to end with %s, but got %s' %
                     (layer_name,
                      url))
-                self.assertEquals(resp.code, 200)
+                self.assertEqual(resp.status_code, 200)
 
-                url = urllib.unquote(url)
+                url = unquote(url)
                 self.check_layer_complete(url, layer_name)
                 wms = get_wms(
                     type_name='geonode:%s' % layer_name, username=GEOSERVER_USER, password=GEOSERVER_PASSWD)
-                layer_info = wms.items()[0][1]
-                self.assertEquals(100, len(layer_info.timepositions))
+                layer_info = list(wms.items())[0][1]
+                self.assertEqual(100, len(layer_info.timepositions))
             else:
                 self.assertTrue('error_msg' in resp_js)
                 self.assertTrue(

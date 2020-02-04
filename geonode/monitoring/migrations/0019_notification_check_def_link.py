@@ -15,26 +15,27 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='metricnotificationcheck',
             name='definition',
-            field=models.OneToOneField(related_name='metric_check', null=True, to='monitoring.NotificationMetricDefinition'),
+            field=models.OneToOneField(related_name='metric_check', on_delete=models.CASCADE,
+                                       null=True, to='monitoring.NotificationMetricDefinition'),
         ),
         migrations.AlterField(
             model_name='notificationcheck',
             name='active',
-            field=models.BooleanField(default=True, help_text=b'Is it active'),
+            field=models.BooleanField(default=True, help_text='Is it active'),
         ),
         migrations.AlterField(
             model_name='notificationcheck',
             name='description',
-            field=models.CharField(help_text=b'Description of the alert', max_length=255),
+            field=models.CharField(help_text='Description of the alert', max_length=255),
         ),
         migrations.AlterField(
             model_name='notificationcheck',
             name='severity',
-            field=models.CharField(default=b'error', help_text=b'How severe would be error from this notification', max_length=32, choices=[(b'warning', b'Warning'), (b'error', b'Error'), (b'fatal', b'Fatal')]),
+            field=models.CharField(default='error', help_text='How severe would be error from this notification', max_length=32, choices=[('warning','Warning'), ('error','Error'), ('fatal','Fatal')]),
         ),
         migrations.AlterField(
             model_name='notificationcheck',
             name='user_threshold',
-            field=jsonfield.fields.JSONField(default={}, help_text=b'Expected min/max values for user configuration'),
+            field=jsonfield.fields.JSONField(default={}, help_text='Expected min/max values for user configuration'),
         ),
     ]

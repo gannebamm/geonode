@@ -27,11 +27,11 @@ from django.contrib.contenttypes.models import ContentType
 from django.conf import settings
 from django.utils.timezone import now
 from django.utils.translation import ugettext_lazy as _
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.core.files.storage import FileSystemStorage
 from geonode.base.models import ResourceBase, ResourceBaseManager, resourcebase_post_save
 from geonode.people.utils import get_valid_user
-from agon_ratings.models import OverallRating
+from pinax.ratings.models import OverallRating
 from geonode.utils import check_shp_columnnames
 from geonode.security.models import PermissionLevelMixin
 from geonode.security.utils import remove_object_permissions
@@ -81,7 +81,10 @@ class Style(models.Model, PermissionLevelMixin):
     workspace = models.CharField(max_length=255, null=True, blank=True)
 
     def __unicode__(self):
-        return u"%s" % self.name
+        return u"{0}".format(self.__str__())
+
+    def __str__(self):
+        return "{0}".format(self.name)
 
     def absolute_url(self):
         if self.sld_url:
@@ -97,7 +100,7 @@ class Style(models.Model, PermissionLevelMixin):
         else:
             logger.error(
                 "SLD URL is empty for Style %s" %
-                self.name.encode('utf-8'))
+                self.name)
             return None
 
     def get_self_resource(self):
@@ -149,11 +152,11 @@ class Layer(ResourceBase):
         null=True,
         blank=True)
     styles = models.ManyToManyField(Style, related_name='layer_styles')
-    remote_service = models.ForeignKey("services.Service", null=True, blank=True)
+    remote_service = models.ForeignKey("services.Service", null=True, blank=True, on_delete=models.CASCADE)
 
     charset = models.CharField(max_length=255, default='UTF-8')
 
-    upload_session = models.ForeignKey('UploadSession', blank=True, null=True)
+    upload_session = models.ForeignKey('UploadSession', blank=True, null=True, on_delete=models.CASCADE)
 
     def is_vector(self):
         return self.storeType == 'dataStore'
@@ -254,8 +257,10 @@ class Layer(ResourceBase):
         return base_files.get(), list_col
 
     def get_absolute_url(self):
-        # return reverse('layer_detail', args=(self.service_typename,))
-        return reverse('layer_detail', args=(self.alternate,))
+        return reverse(
+            'layer_detail',
+            args=("%s:%s" % (self.store, self.alternate),)
+        )
 
     def attribute_config(self):
         # Get custom attribute sort order and labels if any
@@ -269,13 +274,10 @@ class Layer(ResourceBase):
         return cfg
 
     def __unicode__(self):
-        return u"{0}".format(self.alternate)
-        # if self.alternate is not None:
-        #     return "%s Layer" % self.service_typename.encode('utf-8')
-        # elif self.name is not None:
-        #     return "%s Layer" % self.name
-        # else:
-        #     return "Unamed Layer"
+        return u"{0}".format(self.__str__())
+
+    def __str__(self):
+        return "{0}".format(self.alternate)
 
     class Meta:
         # custom permissions,
@@ -323,9 +325,9 @@ class UploadSession(models.Model):
 
     """Helper class to keep track of uploads.
     """
-    resource = models.ForeignKey(ResourceBase, blank=True, null=True)
+    resource = models.ForeignKey(ResourceBase, blank=True, null=True, on_delete=models.CASCADE)
     date = models.DateTimeField(auto_now=True)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     processed = models.BooleanField(default=False)
     error = models.TextField(blank=True, null=True)
     traceback = models.TextField(blank=True, null=True)
@@ -334,19 +336,23 @@ class UploadSession(models.Model):
     def successful(self):
         return self.processed and self.errors is None
 
-    def __unicode__(self):
+    def __str__(self):
+        _s = "[Upload session-id: {}]".format(self.id)
         try:
-            _s = '[Upload session-id: {}] - {}'.format(self.id, self.resource.title)
+            _s += " - {}".format(self.resource.title)
         except BaseException:
-            _s = '[Upload session-id: {}]'.format(self.id)
-        return u"{0}".format(_s)
+            pass
+        return "{0}".format(_s)
+
+    def __unicode__(self):
+        return u"{0}".format(self.__str__())
 
 
 class LayerFile(models.Model):
 
     """Helper class to store original files.
     """
-    upload_session = models.ForeignKey(UploadSession)
+    upload_session = models.ForeignKey(UploadSession, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
     base = models.BooleanField(default=False)
     file = models.FileField(
@@ -380,6 +386,7 @@ class Attribute(models.Model):
         blank=False,
         null=False,
         unique=False,
+        on_delete=models.CASCADE,
         related_name='attribute_set')
     attribute = models.CharField(
         _('attribute name'),
@@ -479,9 +486,13 @@ class Attribute(models.Model):
 
     objects = AttributeManager()
 
+    def __str__(self):
+        return "{0}".format(
+            self.attribute_label.encode(
+                "utf-8", "replace") if self.attribute_label else self.attribute.encode("utf-8", "replace"))
+
     def __unicode__(self):
-        return "%s" % self.attribute_label.encode(
-            "utf-8", "replace") if self.attribute_label else self.attribute.encode("utf-8", "replace")
+        return u"{0}".format(self.__str__())
 
     def unique_values_as_list(self):
         return self.unique_values.split(',')
@@ -505,16 +516,20 @@ def _get_alternate_name(instance):
 
 def pre_save_layer(instance, sender, **kwargs):
     if kwargs.get('raw', False):
-        instance.owner = instance.resourcebase_ptr.owner
-        instance.uuid = instance.resourcebase_ptr.uuid
-        instance.bbox_x0 = instance.resourcebase_ptr.bbox_x0
-        instance.bbox_x1 = instance.resourcebase_ptr.bbox_x1
-        instance.bbox_y0 = instance.resourcebase_ptr.bbox_y0
-        instance.bbox_y1 = instance.resourcebase_ptr.bbox_y1
-        instance.srid = instance.resourcebase_ptr.srid
+        try:
+            _resourcebase_ptr = instance.resourcebase_ptr
+            instance.owner = _resourcebase_ptr.owner
+            instance.uuid = _resourcebase_ptr.uuid
+            instance.bbox_x0 = _resourcebase_ptr.bbox_x0
+            instance.bbox_x1 = _resourcebase_ptr.bbox_x1
+            instance.bbox_y0 = _resourcebase_ptr.bbox_y0
+            instance.bbox_y1 = _resourcebase_ptr.bbox_y1
+            instance.srid = _resourcebase_ptr.srid
+        except BaseException as e:
+            logger.exception(e)
 
     if instance.abstract == '' or instance.abstract is None:
-        instance.abstract = unicode(_('No abstract provided'))
+        instance.abstract = u'No abstract provided'
     if instance.title == '' or instance.title is None:
         instance.title = instance.name
 
@@ -575,7 +590,7 @@ def pre_delete_layer(instance, sender, **kwargs):
         from geonode.maps.models import MapLayer
         logger.debug(
             "Going to delete associated maplayers for [%s]",
-            instance.alternate.encode('utf-8'))
+            instance.alternate)
         MapLayer.objects.filter(
             name=instance.alternate,
             ows_url=instance.ows_url).delete()
@@ -583,7 +598,7 @@ def pre_delete_layer(instance, sender, **kwargs):
 
     logger.debug(
         "Going to delete the styles associated for [%s]",
-        instance.alternate.encode('utf-8'))
+        instance.alternate)
     ct = ContentType.objects.get_for_model(instance)
     OverallRating.objects.filter(
         content_type=ct,

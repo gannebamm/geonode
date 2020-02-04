@@ -66,8 +66,8 @@ First, we are going to install all the **system packages** needed for the GeoNod
 .. code-block:: shell
 
   # Install packages from GeoNode core
-  sudo apt install -y python-gdal gdal-bin
-  sudo apt install -y python-pip python-dev python-virtualenv
+  sudo apt install -y gdal-bin
+  sudo apt install -y python3-pip python3-dev python3-virtualenv python3-venv virtualenvwrapper
   sudo apt install -y libxml2 libxml2-dev gettext
   sudo apt install -y libxslt1-dev libjpeg-dev libpng-dev libpq-dev libgdal-dev libgdal20
   sudo apt install -y software-properties-common build-essential
@@ -88,7 +88,7 @@ First, we are going to install all the **system packages** needed for the GeoNod
 
   # Install Packages for Virtual environment management
   sudo apt install -y virtualenv virtualenvwrapper
-  
+
   # Install text editor
   sudo apt install -y vim
 
@@ -127,15 +127,22 @@ Make an instance out of the ``Django Template``
 
 .. code-block:: shell
 
-  mkvirtualenv my_geonode
-  pip install Django==1.11.25
+  vim ~/.bashrc
+  # add the following line to the bottom
+  source /usr/share/virtualenvwrapper/virtualenvwrapper.sh
+
+.. code-block:: shell
+
+  source /usr/share/virtualenvwrapper/virtualenvwrapper.sh
+  mkvirtualenv --python=/usr/bin/python3 my_geonode
+  pip install Django==2.2.9
 
   django-admin startproject --template=./geonode-project -e py,sh,md,rst,json,yml,ini,env,sample -n monitoring-cron -n Dockerfile my_geonode
 
   # Install the Python packages
   cd /opt/geonode_custom/my_geonode
   pip install -r requirements.txt --upgrade --no-cache --no-cache-dir
-  pip install -e . --upgrade --no-cache --no-cache-dir
+  pip install -e . --upgrade
 
   # Install GDAL Utilities for Python
   pip install pygdal=="`gdal-config --version`.*"
@@ -189,7 +196,7 @@ GeoNode Project.
 
 **Be careful** to use the **new** paths and names everywhere:
 
-* Everytime you'll find the keyword ``goenode``, you'll need to use your geonode custom name instead (in this example ``my_geonode``).
+* Everytime you'll find the keyword ``geonode``, you'll need to use your geonode custom name instead (in this example ``my_geonode``).
 
 * Everytime you'll find paths pointing to ``/opt/geonode/``, you'll need to update them to point to your custom project instead (in this example ``/opt/geonode_custom/my_geonode``).
 
@@ -227,8 +234,9 @@ Make an instance out of the ``Django Template``
 
 .. code-block:: shell
 
-  mkvirtualenv my_geonode
-  pip install Django==1.11.25
+  source /usr/share/virtualenvwrapper/virtualenvwrapper.sh
+  mkvirtualenv --python=/usr/bin/python3 my_geonode
+  pip install Django==2.2.9
 
   django-admin startproject --template=./geonode-project -e py,sh,md,rst,json,yml,ini,env,sample -n monitoring-cron -n Dockerfile my_geonode
   cd /opt/geonode_custom/my_geonode
@@ -264,7 +272,7 @@ Replace everywhere ``localhost`` with ``www.example.org``
 
 .. code-block:: shell
 
-  vim scripts/docker/env/production/*.env
+  vim .env
 
 .. code-block:: shell
 
@@ -447,7 +455,7 @@ with following content
         branch_name: master
         virtualenv_dir: /home/geo/.venvs
         site_url: http://mygeonode.org/
-        geoserver_url: https://build.geo-solutions.it/geonode/geoserver/latest/geoserver-2.15.2.war
+        geoserver_url: https://build.geo-solutions.it/geonode/geoserver/latest/geoserver-2.15.4.war
         pg_max_connections: 100
         pg_shared_buffers: 128MB
         tomcat_xms: 1024M
@@ -458,7 +466,7 @@ with following content
         - name: Install python for Ansible
           become: yes
           become_user: root
-          raw: test -e /usr/bin/python || (apt -y update && apt install -y python-minimal)
+          raw: test -e /usr/bin/python || (apt -y update && apt install -y python3-minimal)
       roles:
          - { role: GeoNode.geonode }
 

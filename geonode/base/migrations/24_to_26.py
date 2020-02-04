@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from __future__ import unicode_literals
+
 
 from django.db import migrations, models
 import taggit.managers
@@ -48,8 +48,8 @@ class Migration(migrations.Migration):
             name='TaggedContentItem',
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
-                ('content_object', models.ForeignKey(to='base.ResourceBase')),
-                ('tag', models.ForeignKey(related_name='keywords', to='base.HierarchicalKeyword')),
+                ('content_object', models.ForeignKey(to='base.ResourceBase', on_delete=models.CASCADE)),
+                ('tag', models.ForeignKey(related_name='keywords', to='base.HierarchicalKeyword', on_delete=models.CASCADE)),
             ],
             options={
                 'abstract': False,
@@ -61,9 +61,9 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('identifier', models.CharField(unique=True, max_length=255)),
                 ('title', models.CharField(max_length=255)),
-                ('date', models.CharField(default=b'', max_length=20)),
-                ('description', models.TextField(default=b'', max_length=255)),
-                ('slug', models.CharField(default=b'', max_length=64)),
+                ('date', models.CharField(default='', max_length=20)),
+                ('description', models.TextField(default='', max_length=255)),
+                ('slug', models.CharField(default='', max_length=64)),
             ],
             options={
                 'ordering': ('identifier',),
@@ -75,8 +75,8 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('about', models.CharField(max_length=255, null=True, blank=True)),
-                ('alt_label', models.CharField(default=b'', max_length=255, null=True, blank=True)),
-                ('thesaurus', models.ForeignKey(related_name='thesaurus', to='base.Thesaurus')),
+                ('alt_label', models.CharField(default='', max_length=255, null=True, blank=True)),
+                ('thesaurus', models.ForeignKey(related_name='thesaurus', to='base.Thesaurus', on_delete=models.CASCADE)),
             ],
             options={
                 'ordering': ('alt_label',),
@@ -89,7 +89,7 @@ class Migration(migrations.Migration):
                 ('id', models.AutoField(verbose_name='ID', serialize=False, auto_created=True, primary_key=True)),
                 ('lang', models.CharField(max_length=3)),
                 ('label', models.CharField(max_length=255)),
-                ('keyword', models.ForeignKey(related_name='keyword', to='base.ThesaurusKeyword')),
+                ('keyword', models.ForeignKey(related_name='keyword', to='base.ThesaurusKeyword', on_delete=models.CASCADE)),
             ],
             options={
                 'ordering': ('keyword', 'lang'),
@@ -99,7 +99,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='topiccategory',
             name='fa_class',
-            field=models.CharField(default=b'fa-times', max_length=64),
+            field=models.CharField(default='fa-times', max_length=64),
         ),
         migrations.AddField(
             model_name='resourcebase',

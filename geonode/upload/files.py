@@ -30,7 +30,11 @@ from geonode.utils import fixup_shp_columnnames
 from geoserver.resource import FeatureType, Coverage
 from django.utils.translation import ugettext as _
 
-from UserList import UserList
+try:
+    from collections import UserList
+except ImportError:
+    # Python 2 compatibility
+    from UserList import UserList
 import zipfile
 import os
 import re
@@ -125,7 +129,7 @@ _mosaics_extensions = ("properties", "shp", "aux")
 
 types = [
     FileType("Shapefile", "shp", vector,
-             auxillary_file_exts=('dbf', 'shx', 'prj')),
+             auxillary_file_exts=('dbf', 'shx', 'prj',)),
     FileType("GeoTIFF", _tif_extensions[0], raster,
              aliases=_tif_extensions[1:]),
     FileType(
@@ -134,19 +138,19 @@ types = [
         auxillary_file_exts=_mosaics_extensions + _tif_extensions
     ),
     FileType("ASCII Text File", "asc", raster,
-             auxillary_file_exts=('prj')),
+             auxillary_file_exts=('prj',)),
     # requires geoserver importer extension
     FileType("PNG", "png", raster,
-             auxillary_file_exts=('prj')),
+             auxillary_file_exts=('prj',)),
     FileType("JPG", "jpg", raster,
-             auxillary_file_exts=('prj')),
+             auxillary_file_exts=('prj',)),
     FileType("CSV", "csv", vector),
     FileType("GeoJSON", "geojson", vector),
     FileType("KML", "kml", vector),
     FileType(
         "KML Ground Overlay", "kml-overlay", raster,
-        aliases=("kmz", "kml"),
-        auxillary_file_exts=("png", "gif", "jpg") + _tif_extensions
+        aliases=("kmz", "kml",),
+        auxillary_file_exts=("png", "gif", "jpg",) + _tif_extensions
     ),
     # requires geoserver gdal extension
     FileType("ERDASImg", "img", raster),
@@ -174,7 +178,7 @@ types = [
              aliases=('tl2', 'tl3', 'tl4', 'tl5', 'tl6', 'tl7', 'tl8', 'tl9')),
     # requires gdal plugin for mrsid and jp2
     FileType("MrSID", "sid", raster,
-             auxillary_file_exts=('sdw')),
+             auxillary_file_exts=('sdw',)),
     FileType("JP2", "jp2", raster)
 ]
 
@@ -225,7 +229,7 @@ def _find_file_type(file_names, extension):
     """
     Returns files that end with the given extension from a list of file names.
     """
-    return filter(lambda f: f.lower().endswith(extension), file_names)
+    return [f for f in file_names if f.lower().endswith(extension)]
 
 
 def clean_macosx_dir(file_names):
@@ -259,7 +263,7 @@ def get_scan_hint(valid_extensions):
 def scan_file(file_name, scan_hint=None, charset=None):
     '''get a list of SpatialFiles for the provided file'''
     if not os.path.exists(file_name):
-        raise Exception(_("Could not access to uploaded data.").encode('UTF-8'))
+        raise Exception(_("Could not access to uploaded data."))
 
     dirname = os.path.dirname(file_name)
     if zipfile.is_zipfile(file_name):

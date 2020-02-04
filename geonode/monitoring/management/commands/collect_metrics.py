@@ -97,15 +97,15 @@ class Command(BaseCommand):
                                until=options['until'],
                                force_check=options['force_check'],
                                format=options['format'])
-            except Exception, err:
+            except Exception as err:
                 log.error("Cannot collect from %s: %s", s, err, exc_info=err)
                 if options['halt_on_errors']:
                     raise
         if not options['do_not_clear']:
-            log.info("Clearing old data")
+            log.debug("Clearing old data")
             c.clear_old_data()
         if options['emit_notifications']:
-            log.info("Processing notifications for %s", options['until'])
+            log.debug("Processing notifications for %s", options['until'])
             s = Service.objects.first()
             interval = s.check_interval
             now = datetime.utcnow().replace(tzinfo=pytz.utc)

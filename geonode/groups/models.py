@@ -17,12 +17,14 @@
 # along with this program. If not, see <http://www.gnu.org/licenses/>.
 #
 #########################################################################
+import logging
 
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.contrib.auth.models import Group
 from django.contrib.auth import get_user_model
 from django.db import models
+from django.db.models import Q
 from django.utils.translation import ugettext_lazy as _
 from django.utils.text import slugify
 from django.db.models import signals
@@ -30,6 +32,8 @@ from django.utils.timezone import now
 
 from taggit.managers import TaggableManager
 from guardian.shortcuts import get_objects_for_group
+
+logger = logging.getLogger(__name__)
 
 
 class GroupCategory(models.Model):
@@ -40,8 +44,11 @@ class GroupCategory(models.Model):
     class Meta:
         verbose_name_plural = _('Group Categories')
 
+    def __unicode__(self):
+        return u"{0}".format(self.__str__())
+
     def __str__(self):
-        return 'Category: {}'.format(self.name.encode('utf-8'))
+        return "{0}".format(self.name)
 
     def get_absolute_url(self):
         return reverse('group_category_detail', args=(self.slug,))
@@ -69,7 +76,7 @@ class GroupProfile(models.Model):
     email_help_text = _('Email used to contact one or all group members, '
                         'such as a mailing list, shared email, or exchange group.')
 
-    group = models.OneToOneField(Group)
+    group = models.OneToOneField(Group, on_delete="CASCASE")
     title = models.CharField(_('Title'), max_length=50)
     slug = models.SlugField(unique=True)
     logo = models.ImageField(_('Logo'), upload_to="people_group", blank=True)
@@ -99,7 +106,10 @@ class GroupProfile(models.Model):
         super(GroupProfile, self).save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        Group.objects.filter(name=self.slug).delete()
+        try:
+            Group.objects.filter(name=str(self.slug)).delete()
+        except BaseException as e:
+            logger.exception(e)
         super(GroupProfile, self).delete(*args, **kwargs)
 
     @classmethod
@@ -107,14 +117,17 @@ class GroupProfile(models.Model):
         """
         Returns the groups that user is a member of.  If the user is a superuser, all groups are returned.
         """
-        if user.is_authenticated():
+        if user.is_authenticated:
             if user.is_superuser:
                 return cls.objects.all()
             return cls.objects.filter(groupmember__user=user)
         return []
 
     def __unicode__(self):
-        return self.title
+        return u"{0}".format(self.__str__())
+
+    def __str__(self):
+        return "{0}".format(self.title)
 
     def keyword_list(self):
         """
@@ -133,12 +146,15 @@ class GroupProfile(models.Model):
             self.group, [
                 'base.view_resourcebase', 'base.change_resourcebase'], any_perm=True)
 
+        _queryset = []
         if resource_type:
-            queryset = [
-                item for item in queryset if hasattr(
-                    item,
-                    resource_type)]
-
+            for item in queryset:
+                try:
+                    if hasattr(item, resource_type):
+                        _queryset.append(item)
+                except BaseException as e:
+                    logger.exception(e)
+        queryset = _queryset if _queryset else queryset
         for resource in queryset:
             yield resource
 
@@ -150,24 +166,30 @@ class GroupProfile(models.Model):
         Returns a queryset of the group's managers.
         """
         return get_user_model().objects.filter(
-            id__in=self.member_queryset().filter(
+            Q(id__in=self.member_queryset().filter(
                 role='manager').values_list(
                 "user",
-                flat=True))
+                flat=True)))
 
     def user_is_member(self, user):
-        if not user.is_authenticated():
+        if not user.is_authenticated:
             return False
+        elif user.is_superuser:
+            return True
         return user.id in self.member_queryset().values_list("user", flat=True)
 
     def user_is_role(self, user, role):
-        if not user.is_authenticated():
+        if not user.is_authenticated:
             return False
+        elif user.is_superuser:
+            return True
         return self.member_queryset().filter(user=user, role=role).exists()
 
     def can_view(self, user):
+        if user.is_superuser and user.is_authenticated:
+            return True
         if self.access == "private":
-            return user.is_authenticated() and self.user_is_member(user)
+            return user.is_authenticated and self.user_is_member(user)
         else:
             return True
 
@@ -178,11 +200,20 @@ class GroupProfile(models.Model):
         if created:
             user.groups.add(self.group)
         else:
-            raise ValueError("The invited user \"{0}\" is already a member".format(user.username))
+            logger.warning("The invited user \"{0}\" is already a member".format(user.username))
 
-    @models.permalink
+    def leave(self, user, **kwargs):
+        if user == user.get_anonymous():
+            raise ValueError("The invited user cannot be anonymous")
+        member, created = GroupMember.objects.get_or_create(group=self, user=user, defaults=kwargs)
+        if not created:
+            user.groups.remove(self.group)
+            member.delete()
+        else:
+            logger.warning("The invited user \"{0}\" is not a member".format(user.username))
+
     def get_absolute_url(self):
-        return ('group_detail', (), {'slug': self.slug})
+        return reverse('group_detail', args=[self.slug, ])
 
     @property
     def class_name(self):
@@ -193,8 +224,8 @@ class GroupMember(models.Model):
     MANAGER = "manager"
     MEMBER = "member"
 
-    group = models.ForeignKey(GroupProfile)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL)
+    group = models.ForeignKey(GroupProfile, on_delete=models.CASCADE)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
     role = models.CharField(max_length=10, choices=[
         (MANAGER, _("Manager")),
         (MEMBER, _("Member")),

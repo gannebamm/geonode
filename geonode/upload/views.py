@@ -42,11 +42,16 @@ import traceback
 import gsimporter
 import tempfile
 
-from httplib import BadStatusLine
+from six import string_types
+try:
+    from http.client import BadStatusLine
+except ImportError:
+    # Python 2 compatibility
+    from httplib import BadStatusLine
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.http import HttpResponseRedirect
 from django.utils.html import escape
 from django.shortcuts import get_object_or_404
@@ -168,7 +173,7 @@ def save_step_view(req, session):
         logger.debug("valid_extensions: {}".format(form.cleaned_data["valid_extensions"]))
         relevant_files = _select_relevant_files(
             form.cleaned_data["valid_extensions"],
-            req.FILES.itervalues()
+            iter(req.FILES.values())
         )
         logger.debug("relevant_files: {}".format(relevant_files))
         _write_uploaded_files_to_disk(tempdir, relevant_files)
@@ -196,9 +201,10 @@ def save_step_view(req, session):
             time_presentation=form.cleaned_data['time_presentation'],
             time_presentation_res=form.cleaned_data['time_presentation_res'],
             time_presentation_default_value=form.cleaned_data['time_presentation_default_value'],
-            time_presentation_reference_value=form.cleaned_data['time_presentation_reference_value']
+            time_presentation_reference_value=form.cleaned_data['time_presentation_reference_value'],
+            charset_encoding=form.cleaned_data["charset"]
         )
-
+        import_session.tasks[0].set_charset(form.cleaned_data["charset"])
         sld = None
         if spatial_files[0].sld_files:
             sld = spatial_files[0].sld_files[0]
@@ -328,7 +334,7 @@ def csv_step_view(request, upload_session):
     # if so, can proceed directly to next step
     attributes = import_session.tasks[0].layer.attributes
     for attr in attributes:
-        if attr.binding == u'com.vividsolutions.jts.geom.Point':
+        if attr.binding == 'com.vividsolutions.jts.geom.Point':
             upload_session.completed_step = 'csv'
             return next_step_response(request, upload_session)
 
@@ -349,7 +355,7 @@ def csv_step_view(request, upload_session):
         lng_candidate = None
         non_str_in_headers = []
         for candidate in attributes:
-            if not isinstance(candidate.name, basestring):
+            if not isinstance(candidate.name, string_types):
                 non_str_in_headers.append(str(candidate.name))
             if is_latitude(candidate.name):
                 lat_candidate = candidate.name
@@ -480,7 +486,7 @@ def time_step_view(request, upload_session):
                     'time_form': create_time_form(request, upload_session, None),
                     'layer_name': layer.name,
                     'layer_values': layer_values,
-                    'layer_attributes': layer_values[0].keys(),
+                    'layer_attributes': list(layer_values[0].keys()),
                     'async_upload': is_async_step(upload_session)
                 }
                 upload_session.completed_step = 'check'
@@ -625,7 +631,7 @@ _steps = {
 def view(req, step):
     """Main uploader view"""
     from django.contrib import auth
-    if not auth.get_user(req).is_authenticated():
+    if not auth.get_user(req).is_authenticated:
         return error_response(req, errors=["Not Authorized"])
     upload_session = None
     upload_id = req.GET.get('id', None)
@@ -678,7 +684,10 @@ def view(req, step):
             if step == 'final':
                 delete_session = True
                 try:
-                    resp_js = json.loads(resp.content)
+                    content = resp.content
+                    if isinstance(content, bytes):
+                        content = content.decode('UTF-8')
+                    resp_js = json.loads(content)
                     delete_session = resp_js.get('status') != 'pending'
 
                     if delete_session:

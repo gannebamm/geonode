@@ -22,15 +22,17 @@ import os
 import json
 import logging
 import zipfile
+import tempfile
 import traceback
 
 from osgeo import ogr
 from lxml import etree
 from itertools import islice
 from defusedxml import lxml as dlxml
+from six import string_types, text_type
 
 from django.conf import settings
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.utils.translation import ugettext as _
@@ -125,8 +127,8 @@ class JSONResponse(HttpResponse):
 
 
 def json_response(*args, **kw):
-    if 'exception' in kw:
-        logger.warn(traceback.format_exc(kw['exception']))
+    # if 'exception' in kw:
+    #     logger.warn(traceback.format_exc(kw['exception']))
     return do_json_response(*args, **kw)
 
 
@@ -164,8 +166,8 @@ def json_loads_byteified(json_text, charset):
 
 def _byteify(data, ignore_dicts=False):
     # if this is a unicode string, return its string representation
-    if isinstance(data, unicode):
-        return data.encode('utf-8')
+    if isinstance(data, text_type):
+        return data
     # if this is a list of values, return list of byteified values
     if isinstance(data, list):
         return [_byteify(item, ignore_dicts=True) for item in data]
@@ -174,7 +176,7 @@ def _byteify(data, ignore_dicts=False):
     if isinstance(data, dict) and not ignore_dicts:
         return {
             _byteify(key, ignore_dicts=True): _byteify(value, ignore_dicts=True)
-            for key, value in data.iteritems()
+            for key, value in data.items()
         }
     # if it's anything else, return it in its original form
     return data
@@ -441,8 +443,7 @@ def check_import_session_is_valid(request, upload_session, import_session):
     if store_type == 'dataStore':
         try:
             layer = import_session.tasks[0].layer
-            invalid = filter(
-                lambda a: str(a.name).find(' ') >= 0, layer.attributes)
+            invalid = [a for a in layer.attributes if str(a.name).find(' ') >= 0]
             if invalid:
                 att_list = "<pre>%s</pre>" % '. '.join(
                     [a.name for a in invalid])
@@ -504,24 +505,34 @@ def _get_time_dimensions(layer, upload_session):
     return att_list
 
 
+def _fixup_base_file(absolute_base_file, tempdir=None):
+    if not tempdir:
+        tempdir = tempfile.mkdtemp()
+    if not os.path.isfile(absolute_base_file):
+        tmp_files = [f for f in os.listdir(tempdir) if os.path.isfile(os.path.join(tempdir, f))]
+        for f in tmp_files:
+            if zipfile.is_zipfile(os.path.join(tempdir, f)):
+                absolute_base_file = unzip_file(os.path.join(tempdir, f), '.shp', tempdir=tempdir)
+                absolute_base_file = os.path.join(tempdir,
+                                                  absolute_base_file)
+    elif zipfile.is_zipfile(absolute_base_file):
+        absolute_base_file = unzip_file(absolute_base_file,
+                                        '.shp', tempdir=tempdir)
+        absolute_base_file = os.path.join(tempdir,
+                                          absolute_base_file)
+    if os.path.exists(absolute_base_file):
+        return absolute_base_file
+    else:
+        raise Exception(_('File does not exist: %s' % absolute_base_file))
+
+
 def _get_layer_values(layer, upload_session, expand=0):
     layer_values = []
     if upload_session:
-        absolute_base_file = upload_session.base_file[0].base_file
-        tempdir = upload_session.tempdir
+        absolute_base_file = _fixup_base_file(
+            upload_session.base_file[0].base_file,
+            upload_session.tempdir)
 
-        if not os.path.isfile(absolute_base_file):
-            tmp_files = [f for f in os.listdir(tempdir) if os.path.isfile(os.path.join(tempdir, f))]
-            for f in tmp_files:
-                if zipfile.is_zipfile(os.path.join(tempdir, f)):
-                    absolute_base_file = unzip_file(os.path.join(tempdir, f), '.shp', tempdir=tempdir)
-                    absolute_base_file = os.path.join(tempdir,
-                                                      absolute_base_file)
-        elif zipfile.is_zipfile(absolute_base_file):
-            absolute_base_file = unzip_file(upload_session.base_file[0].base_file,
-                                            '.shp', tempdir=tempdir)
-            absolute_base_file = os.path.join(tempdir,
-                                              absolute_base_file)
         inDataSource = ogr.Open(absolute_base_file)
         lyr = inDataSource.GetLayer(str(layer.name))
         limit = 100
@@ -530,16 +541,17 @@ def _get_layer_values(layer, upload_session, expand=0):
                 feat_values = json_loads_byteified(
                     feat.ExportToJson(),
                     upload_session.charset).get('properties')
-                for k in feat_values.keys():
-                    type_code = feat.GetFieldDefnRef(k).GetType()
-                    binding = feat.GetFieldDefnRef(k).GetFieldTypeName(type_code)
-                    feat_value = feat_values[k] if str(feat_values[k]) != 'None' else 0
-                    if expand > 0:
-                        ff = {'value': feat_value, 'binding': binding}
-                        feat_values[k] = ff
-                    else:
-                        feat_values[k] = feat_value
-                layer_values.append(feat_values)
+                if feat_values:
+                    for k in feat_values.keys():
+                        type_code = feat.GetFieldDefnRef(k).GetType()
+                        binding = feat.GetFieldDefnRef(k).GetFieldTypeName(type_code)
+                        feat_value = feat_values[k] if str(feat_values[k]) != 'None' else 0
+                        if expand > 0:
+                            ff = {'value': feat_value, 'binding': binding}
+                            feat_values[k] = ff
+                        else:
+                            feat_values[k] = feat_value
+                    layer_values.append(feat_values)
             except BaseException as e:
                 logger.exception(e)
     return layer_values
@@ -738,7 +750,7 @@ def import_imagemosaic_granules(
              'fetch size': '1000',
              'host': db['HOST'],
              'port': db['PORT'] if isinstance(
-                 db['PORT'], basestring) else str(db['PORT']) or '5432',
+                 db['PORT'], string_types) else str(db['PORT']) or '5432',
              'database': db['NAME'],
              'user': db['USER'],
              'passwd': db['PASSWORD'],

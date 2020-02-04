@@ -20,24 +20,30 @@
 
 import os
 import re
-import json
 import shutil
 import logging
 import tempfile
 import traceback
+import io
+import gzip
 
 from hyperlink import URL
 from slugify import slugify
-from urlparse import urlparse, urlsplit, urljoin
+try:
+    from urllib.parse import urlparse, urlsplit, urljoin
+except ImportError:
+    # Python 2 compatibility
+    from urlparse import urlparse, urlsplit, urljoin
 
 from django.conf import settings
 from django.http import HttpResponse
 from django.http.request import validate_host
 from django.views.generic import View
 from django.views.decorators.csrf import requires_csrf_token
+from django.template import loader
 from distutils.version import StrictVersion
 from django.utils.translation import ugettext as _
-from django.core.files.storage import default_storage as storage
+from django.core.files.storage import FileSystemStorage
 
 from geonode.base.models import Link
 from geonode.layers.models import Layer, LayerFile
@@ -58,6 +64,8 @@ TIMEOUT = 300
 LINK_TYPES = [L for L in _LT if L.startswith("OGC:")]
 
 logger = logging.getLogger(__name__)
+
+storage = FileSystemStorage()
 
 ows_regexp = re.compile(
     r"^(?i)(version)=(\d\.\d\.\d)(?i)&(?i)request=(?i)(GetCapabilities)&(?i)service=(?i)(\w\w\w)$")
@@ -175,9 +183,7 @@ def proxy(request, url=None, response_callback=None,
     # decompress GZipped responses if not enabled
     # if content and response and response.getheader('Content-Encoding') == 'gzip':
     if content and content_type and content_type == 'gzip':
-        from StringIO import StringIO
-        import gzip
-        buf = StringIO(content)
+        buf = io.BytesIO(content)
         f = gzip.GzipFile(fileobj=buf)
         content = f.read()
 
@@ -218,30 +224,57 @@ def proxy(request, url=None, response_callback=None,
 
 def download(request, resourceid, sender=Layer):
 
+    _not_authorized = _("You are not authorized to download this resource.")
+    _not_permitted = _("You are not permitted to save or edit this resource.")
+    _no_files_found = _("No files have been found for this resource. Please, contact a system administrator.")
+
     instance = resolve_object(request,
                               sender,
                               {'pk': resourceid},
                               permission='base.download_resourcebase',
-                              permission_msg=_("You are not permitted to save or edit this resource."))
+                              permission_msg=_not_permitted)
 
     if isinstance(instance, Layer):
+        # Create Target Folder
+        dirpath = tempfile.mkdtemp()
+        dir_time_suffix = get_dir_time_suffix()
+        target_folder = os.path.join(dirpath, dir_time_suffix)
+        if not os.path.exists(target_folder):
+            os.makedirs(target_folder)
+
+        layer_files = []
         try:
             upload_session = instance.get_upload_session()
-            layer_files = [item for idx, item in enumerate(LayerFile.objects.filter(upload_session=upload_session))]
+            if upload_session:
+                layer_files = [
+                    item for idx, item in enumerate(LayerFile.objects.filter(upload_session=upload_session))]
+                if layer_files:
+                    # Copy all Layer related files into a temporary folder
+                    for l in layer_files:
+                        if storage.exists(str(l.file)):
+                            geonode_layer_path = storage.path(str(l.file))
+                            base_filename, original_ext = os.path.splitext(geonode_layer_path)
+                            shutil.copy2(geonode_layer_path, target_folder)
+                        else:
+                            return HttpResponse(
+                                loader.render_to_string(
+                                    '401.html',
+                                    context={
+                                        'error_title': _("No files found."),
+                                        'error_message': _no_files_found
+                                    },
+                                    request=request), status=404)
 
-            # Create Target Folder
-            dirpath = tempfile.mkdtemp()
-            dir_time_suffix = get_dir_time_suffix()
-            target_folder = os.path.join(dirpath, dir_time_suffix)
-            if not os.path.exists(target_folder):
-                os.makedirs(target_folder)
-
-            # Copy all Layer related files into a temporary folder
-            for l in layer_files:
-                if storage.exists(l.file):
-                    geonode_layer_path = storage.path(l.file)
-                    base_filename, original_ext = os.path.splitext(geonode_layer_path)
-                    shutil.copy2(geonode_layer_path, target_folder)
+            # Check we can access the original files
+            if not layer_files:
+                return HttpResponse(
+                    loader.render_to_string(
+                        '401.html',
+                        context={
+                            'error_title': _("No files found."),
+                            'error_message': _no_files_found
+                        },
+                        request=request), status=404)
 
             # Let's check for associated SLD files (if any)
             try:
@@ -271,7 +304,6 @@ def download(request, resourceid, sender=Layer):
                         traceback.print_exc()
                         tb = traceback.format_exc()
                         logger.debug(tb)
-
             except BaseException:
                 traceback.print_exc()
                 tb = traceback.format_exc()
@@ -327,7 +359,7 @@ def download(request, resourceid, sender=Layer):
             zip_dir(target_folder, target_file)
             register_event(request, 'download', instance)
             response = HttpResponse(
-                content=open(target_file),
+                content=open(target_file, mode='rb'),
                 status=200,
                 content_type="application/zip")
             response['Content-Disposition'] = 'attachment; filename="%s"' % target_file_name
@@ -337,20 +369,21 @@ def download(request, resourceid, sender=Layer):
             tb = traceback.format_exc()
             logger.debug(tb)
             return HttpResponse(
-                json.dumps({
-                    'error': 'file_not_found'
-                }),
-                status=404,
-                content_type="application/json"
-            )
-
+                loader.render_to_string(
+                    '401.html',
+                    context={
+                        'error_title': _("No files found."),
+                        'error_message': _no_files_found
+                    },
+                    request=request), status=404)
     return HttpResponse(
-        json.dumps({
-            'error': 'unauthorized_request'
-        }),
-        status=403,
-        content_type="application/json"
-    )
+        loader.render_to_string(
+            '401.html',
+            context={
+                'error_title': _("Not Authorized"),
+                'error_message': _not_authorized
+            },
+            request=request), status=403)
 
 
 class OWSListView(View):

@@ -24,6 +24,7 @@ div#user_messages {
 
   to {
     opacity: 0;
+    visibility: hidden;
   }
 }
 @-webkit-keyframes msgDisappear {
@@ -33,6 +34,8 @@ div#user_messages {
 
   to {
     opacity: 0;
+    visibility: hidden;
+
   }
 }
 
@@ -337,6 +340,16 @@ article.tab-pane {
 		color: white;*/
     padding: 1em 0;
 
+    .container {
+    	.text-center {
+    		.row {
+    			display: flex;
+    			display: -webkit-flex;
+    			flex-wrap: wrap;
+    		}
+    	}
+    }
+
     p {
       font-size: 12px;
     }
@@ -375,12 +388,16 @@ article.tab-pane {
     padding: 2em 0;
     text-align: center;
 
+    .row {
+      margin: 0px;
+    }
+
     .col-md-3 {
       padding: 2em 1em;
 
       img {
-        height: 180px;
-        width: 100%;
+        max-height: 180px;
+        width: auto;
       }
     }
 
@@ -657,6 +674,25 @@ article.tab-pane {
 .controls > textarea {
   width: 320px;
 }
+
+/* treeview component */
+
+.treeview .list-group-item {
+    cursor: pointer;
+    word-break: break-all;
+    padding-left: 0px;
+    padding-left: 12px;
+}
+
+.treeview span.icon {
+    margin-right: 5px;
+}
+
+span.icon.node-icon:before {
+    font-family: FontAwesome;
+    content: "\f07b";
+}
+
 /* Maps
 ----------------------- */
 .map-actions {
@@ -1473,4 +1509,77 @@ form-inline {
 #missing-values {
   color: @red-dark;
   font-style: italic;
+}
+
+/** Metadata select2 styles */
+.has-error {
+  color: #a94442 !important;
+}
+.has-error .select2-selection {
+  border-color: #a94442 !important;
+}
+
+/** Autocomplete styling **/
+.autocomplete-input #text_search_input, .autocomplete-input #region_search_input {
+  width: 100%;
+}
+
+.autocomplete-input .ac-results {
+  position: absolute;
+  border: 1px solid #eeeeee;
+  border-top: none;
+  border-radius: 5px;
+  outline-width: 0;
+  text-indent: 5px;
+  margin-top: 0px;
+  z-index: 10000;
+}
+
+.autocomplete-input .ac-results .result-wrapper {
+  border-bottom: 1px solid #eeeeee;
+  padding: 3px;
+  background-color: white;
+}
+
+.autocomplete-input .ac-results .result-wrapper:hover {
+  background-color: #eeeeee;
+  opacity: 1;
+}
+
+.autocomplete-input .ac-results .result-wrapper:last-child {
+  border-bottom: none;
+}
+
+.autocomplete-input .ac-results .result-wrapper .ac-result {
+  border: none;
+  text-decoration: none;
+  color: black;
+  padding: 0px;
+}
+
+/** Autocomplete for thesaurus field in advanced metadata edit views
+  There should be a better way to do this!
+**/
+#metadata_update .select2-container {
+  width: 100% !important;
+  min-width: 0 !important;
+}
+
+#metadata_update .select2-selection {
+  min-height: 42px !important;
+  height: auto !important;
+}
+
+#metadata_update .select2-container--default .select2-selection--single .select2-selection__arrow {
+  top: 8px !important;
+}
+
+#metadata_update .form-controls {
+  padding-right: 0px !important;
+  padding-left: 0px !important;
+}
+
+#metadata_update .form-group {
+  margin-right: 0px;
+  margin-left: 0px;
 }

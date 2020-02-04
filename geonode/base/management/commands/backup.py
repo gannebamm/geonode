@@ -18,17 +18,19 @@
 #
 #########################################################################
 
-try:
-    import json
-except ImportError:
-    from django.utils import simplejson as json
+import json
 import os
 import time
 import shutil
 import requests
 import re
-import helpers
-from helpers import Config
+import six
+try: 
+    import helpers
+    from helpers import Config
+except ImportError:
+    from . import helpers
+    from .helpers import Config
 
 from requests.auth import HTTPBasicAuth
 from xmltodict import parse as parse_xml
@@ -90,42 +92,33 @@ class Command(BaseCommand):
         passwd = settings.OGC_SERVER['default']['PASSWORD']
         geoserver_bk_file = os.path.join(target_folder, 'geoserver_catalog.zip')
 
-        print "Dumping 'GeoServer Catalog ["+url+"]' into '"+geoserver_bk_file+"'."
+        print("Dumping 'GeoServer Catalog ["+url+"]' into '"+geoserver_bk_file+"'.")
         data = {'backup': {'archiveFile': geoserver_bk_file, 'overwrite': 'true',
                            'options': {'option': ['BK_BEST_EFFORT=true']}}}
-        headers = {'Content-type': 'application/json'}
+        headers = {
+            'Accept': 'text/plain',
+            'Content-type': 'application/json'
+        }
         r = requests.post(url + 'rest/br/backup/', data=json.dumps(data),
                           headers=headers, auth=HTTPBasicAuth(user, passwd))
         error_backup = 'Could not successfully backup GeoServer ' + \
                        'catalog [{}rest/br/backup/]: {} - {}'
-
-        if (r.status_code > 201):
-
+        if r.status_code in (200, 201, 406):
             try:
-                gs_backup = r.json()
-            except ValueError:
-                raise ValueError(error_backup.format(url, r.status_code, r.text))
-
-            gs_bk_exec_id = gs_backup['backup']['execution']['id']
-            r = requests.get(url + 'rest/br/backup/' + str(gs_bk_exec_id) + '.json',
-                             auth=HTTPBasicAuth(user, passwd),
-                             timeout=10)
-            if (r.status_code == 200):
-
-                try:
+                r = requests.get(url + 'rest/br/backup.json',
+                                 auth=HTTPBasicAuth(user, passwd),
+                                 timeout=10)
+                if (r.status_code == 200):
                     gs_backup = r.json()
-                except ValueError:
-                    raise ValueError(error_backup.format(url, r.status_code, r.text))
+                    _url = gs_backup['backups']['backup'][len(gs_backup['backups']['backup']) - 1]['href']
+                    r = requests.get(_url,
+                                     auth=HTTPBasicAuth(user, passwd),
+                                     timeout=10)
+                    if (r.status_code == 200):
+                        gs_backup = r.json()
 
-                gs_bk_progress = gs_backup['backup']['execution']['progress']
-                print gs_bk_progress
-
-            raise ValueError(error_backup.format(url, r.status_code, r.text))
-
-        else:
-
-            try:
-                gs_backup = r.json()
+                if (r.status_code != 200):
+                    raise ValueError(error_backup.format(_url, r.status_code, r.text))
             except ValueError:
                 raise ValueError(error_backup.format(url, r.status_code, r.text))
 
@@ -152,7 +145,7 @@ class Command(BaseCommand):
 
                         gs_bk_exec_status = gs_backup['backup']['execution']['status']
                         gs_bk_exec_progress = gs_backup['backup']['execution']['progress']
-                        print str(gs_bk_exec_status) + ' - ' + gs_bk_exec_progress
+                        print(str(gs_bk_exec_status) + ' - ' + gs_bk_exec_progress)
                         time.sleep(3)
                     else:
                         raise ValueError(error_backup.format(url, r.status_code, r.text))
@@ -171,7 +164,7 @@ class Command(BaseCommand):
                     os.makedirs(gs_data_folder)
 
                 copy_tree(gs_data_root, gs_data_folder)
-                print "Dumped GeoServer Uploaded Data from '"+gs_data_root+"'."
+                print("Dumped GeoServer Uploaded Data from '"+gs_data_root+"'.")
 
     def dump_geoserver_vector_data(self, config, settings, target_folder):
         if (config.gs_dump_vector_data):
@@ -235,14 +228,14 @@ class Command(BaseCommand):
 
             def find_external(tree, key=None):
                 if isinstance(tree, dict):
-                    for key, value in tree.iteritems():
+                    for key, value in tree.items():
                         for found in find_external(value, key=key):
                             yield found
                 elif isinstance(tree, list):
                     for item in tree:
                         for found in find_external(item, key=key):
                             yield found
-                elif isinstance(tree, unicode):
+                elif isinstance(tree, six.string_types):
                     text = tree.encode('utf-8')
                     for find in (match_fileurl, match_filename):
                         found = find(key, text)
@@ -276,9 +269,9 @@ class Command(BaseCommand):
         if not backup_dir or len(backup_dir) == 0:
             raise CommandError("Destination folder '--backup-dir' is mandatory")
 
-        print "Before proceeding with the Backup, please ensure that:"
-        print " 1. The backend (DB or whatever) is accessible and you have rights"
-        print " 2. The GeoServer is up and running and reachable from this machine"
+        print("Before proceeding with the Backup, please ensure that:")
+        print(" 1. The backend (DB or whatever) is accessible and you have rights")
+        print(" 2. The GeoServer is up and running and reachable from this machine")
         message = 'You want to proceed?'
 
         if force_exec or helpers.confirm(prompt=message, resp=False):
@@ -289,7 +282,7 @@ class Command(BaseCommand):
             if not os.path.exists(target_folder):
                 os.makedirs(target_folder)
             # Temporary folder to store backup files. It will be deleted at the end.
-            os.chmod(target_folder, 0777)
+            os.chmod(target_folder, 0o777)
 
             if not skip_geoserver:
                 self.create_geoserver_backup(settings, target_folder)
@@ -302,13 +295,13 @@ class Command(BaseCommand):
 
             try:
                 # Deactivate GeoNode Signals
-                print "Deactivating GeoNode Signals..."
+                print("Deactivating GeoNode Signals...")
                 designals()
-                print "...done!"
+                print("...done!")
 
                 # Dump Fixtures
                 for app_name, dump_name in zip(config.app_names, config.dump_names):
-                    print "Dumping '"+app_name+"' into '"+dump_name+".json'."
+                    print("Dumping '"+app_name+"' into '"+dump_name+".json'.")
                     # Point stdout at a file for dumping data to.
                     output = open(os.path.join(target_folder, dump_name+'.json'), 'w')
                     call_command('dumpdata', app_name, format='json', indent=2, natural=True, stdout=output)
@@ -321,7 +314,7 @@ class Command(BaseCommand):
                     os.makedirs(media_folder)
 
                 copy_tree(media_root, media_folder)
-                print "Saved Media Files from '"+media_root+"'."
+                print("Saved Media Files from '"+media_root+"'.")
 
                 # Store Static Root
                 static_root = settings.STATIC_ROOT
@@ -330,7 +323,7 @@ class Command(BaseCommand):
                     os.makedirs(static_folder)
 
                 copy_tree(static_root, static_folder)
-                print "Saved Static Root from '"+static_root+"'."
+                print("Saved Static Root from '"+static_root+"'.")
 
                 # Store Static Folders
                 static_folders = settings.STATICFILES_DIRS
@@ -345,7 +338,7 @@ class Command(BaseCommand):
                         os.makedirs(static_folder)
 
                     copy_tree(static_files_folder, static_folder)
-                    print "Saved Static Files from '"+static_files_folder+"'."
+                    print("Saved Static Files from '"+static_files_folder+"'.")
 
                 # Store Template Folders
                 template_folders = []
@@ -367,7 +360,7 @@ class Command(BaseCommand):
                         os.makedirs(template_folder)
 
                     copy_tree(template_files_folder, template_folder)
-                    print "Saved Template Files from '"+template_files_folder+"'."
+                    print("Saved Template Files from '"+template_files_folder+"'.")
 
                 # Store Locale Folders
                 locale_folders = settings.LOCALE_PATHS
@@ -382,7 +375,7 @@ class Command(BaseCommand):
                         os.makedirs(locale_folder)
 
                     copy_tree(locale_files_folder, locale_folder)
-                    print "Saved Locale Files from '"+locale_files_folder+"'."
+                    print("Saved Locale Files from '"+locale_files_folder+"'.")
 
                 # Create Final ZIP Archive
                 zip_dir(target_folder, os.path.join(backup_dir, dir_time_suffix+'.zip'))
@@ -391,13 +384,13 @@ class Command(BaseCommand):
                 try:
                     shutil.rmtree(target_folder)
                 except:
-                    print "WARNING: Could not be possible to delete the temp folder: '" + str(target_folder) + "'"
+                    print("WARNING: Could not be possible to delete the temp folder: '" + str(target_folder) + "'")
 
-                print "Backup Finished. Archive generated."
+                print("Backup Finished. Archive generated.")
 
                 return str(os.path.join(backup_dir, dir_time_suffix+'.zip'))
             finally:
                 # Reactivate GeoNode Signals
-                print "Reactivating GeoNode Signals..."
+                print("Reactivating GeoNode Signals...")
                 resignals()
-                print "...done!"
+                print("...done!")

@@ -19,22 +19,24 @@
 #########################################################################
 
 from django.contrib import admin
+
+from modeltranslation.admin import TabbedTranslationAdmin
+
 from geonode.documents.models import Document
-from geonode.base.admin import MediaTranslationAdmin, ResourceBaseAdminForm
+from geonode.base.admin import ResourceBaseAdminForm
 from geonode.base.admin import metadata_batch_edit
 
 
 class DocumentAdminForm(ResourceBaseAdminForm):
-
-    class Meta:
+    class Meta(ResourceBaseAdminForm.Meta):
         model = Document
         fields = '__all__'
-        exclude = (
-            'resource',
-        )
+        # exclude = (
+        #     'resource',
+        # )
 
 
-class DocumentAdmin(MediaTranslationAdmin):
+class DocumentAdmin(TabbedTranslationAdmin):
     list_display = ('id',
                     'title',
                     'date',

@@ -21,7 +21,7 @@
 from geonode.tests.base import GeoNodeBaseTestSupport
 
 from django.contrib.auth import get_user_model
-from django.core.urlresolvers import reverse
+from django.urls import reverse
 from django.core import mail
 from django.contrib.sites.models import Site
 
@@ -37,7 +37,7 @@ class PeopleTest(GeoNodeBaseTestSupport):
 
         # page renders
         response = self.client.get(url)
-        self.assertEquals(response.status_code, 200)
+        self.assertEqual(response.status_code, 200)
 
         # and responds for a bad email
         response = self.client.post(url, data={

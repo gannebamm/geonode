@@ -67,12 +67,14 @@ def catalogue_post_save(instance, sender, **kwargs):
             else:
                 raise err
 
-        msg = ('Metadata record for %s does not exist,'
-               ' check the catalogue signals.' % instance.title)
-        assert record is not None, msg
+        if not record:
+            msg = ('Metadata record for %s does not exist,'
+                   ' check the catalogue signals.' % instance.title)
+            raise Exception(msg)
 
-        msg = ('Metadata record for %s should contain links.' % instance.title)
-        assert hasattr(record, 'links'), msg
+        if not hasattr(record, 'links'):
+            msg = ('Metadata record for %s should contain links.' % instance.title)
+            raise Exception(msg)
 
         # Create the different metadata links with the available formats
         for mime, name, metadata_url in record.links['metadata']:
@@ -84,7 +86,7 @@ def catalogue_post_save(instance, sender, **kwargs):
                                                          mime=mime,
                                                          link_type='metadata')
                                            )
-            except Link.MultipleObjectsReturned:
+            except BaseException:
                 _d = dict(name=name,
                           extension='xml',
                           mime=mime,
@@ -109,6 +111,8 @@ def catalogue_post_save(instance, sender, **kwargs):
         resources.update(metadata_xml=md_doc)
         resources.update(csw_wkt_geometry=csw_wkt_geometry)
         resources.update(csw_anytext=csw_anytext)
+    except BaseException as e:
+        LOGGER.debug(e)
     finally:
         # Revert temporarily changed publishing state
         if not is_published:

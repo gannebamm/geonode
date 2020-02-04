@@ -2,7 +2,7 @@
 {% load i18n %}
 {% load staticfiles %}
 {% load dialogos_tags %}
-{% load agon_ratings_tags %}
+{% load pinax_ratings_tags %}
 {% load bootstrap_tags %}
 {% load pagination_tags %}
 {% load base_tags %}
@@ -31,7 +31,13 @@
 <div class="page-header">
     <style>
     #paneltbar {
-        margin-top: 1px !important;
+      margin-top: 1px !important;
+    }
+
+    .msgapi #mapstore-print-panel.modal-dialog {
+      height: 400px;
+      width: 100%;
+      position: absolute;
     }
     </style>
 
@@ -202,7 +208,7 @@
             {% for layer in resource.layer_set.all %}
             {% ifnotequal layer.group 'background' %}
               {% if layer.local %}
-              <li><a href="{% url "layer_detail" layer.name %}">{{ layer.layer_title }}</a></li>
+              <li><a href="{% url "layer_detail" layer.name %}">{% if layer.layer_title %}{{ layer.layer_title }}{% else %}{{ layer.name }}{% endif %}</a></li>
               {% else %}
               <li>{{ layer.layer_title }}</li>
               {% endif %}
@@ -376,13 +382,6 @@
       };
       {% endverbatim %}
      });
-    {% if DISPLAY_SOCIAL %}
-     (function() {
-       var po = document.createElement('script'); po.type = 'text/javascript'; po.async = true;
-       po.src = 'https://apis.google.com/js/plusone.js';
-       var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(po, s);
-     })();
-    {% endif %}
       $("#comment_submit_btn").click(function(event) {
         $.ajax({
           type: "POST",

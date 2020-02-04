@@ -23,6 +23,7 @@ import pytz
 from datetime import datetime, timedelta
 from decimal import Decimal
 from itertools import chain
+from six import string_types, integer_types
 
 from django.conf import settings
 from django.db import models
@@ -161,7 +162,7 @@ class CollectorAPI(object):
             if metric_name is None:
                 continue
             value = metric_data['value']
-            if isinstance(value, (str, unicode,)):
+            if isinstance(value, string_types):
                 value = value.replace(',', '.')
             mdata = {'value': value,
                      'value_raw': value,
@@ -201,7 +202,7 @@ class CollectorAPI(object):
                                    service=service)\
             .delete()
 
-        for ifname, ifdata in data['data']['network'].iteritems():
+        for ifname, ifdata in data['data']['network'].items():
             for tx_label, tx_value in ifdata['traffic'].items():
                 mdata = {'value': tx_value,
                          'value_raw': tx_value,
@@ -423,16 +424,17 @@ class CollectorAPI(object):
                 values = requests.distinct(
                     column_name).values_list(column_name, flat=True)
             for v in values:
-                value = v
-                if is_user_metric:
-                    value = v[0]
-                rqs = requests.filter(**{column_name: value})
-                row = rqs.aggregate(
-                    value=models.Count(column_name),
-                    samples=models.Count(column_name)
-                )
-                row['label'] = v
-                q.append(row)
+                if v is not None:
+                    value = v
+                    if is_user_metric:
+                        value = v[0]
+                    rqs = requests.filter(**{column_name: value})
+                    row = rqs.aggregate(
+                        value=models.Count(column_name),
+                        samples=models.Count(column_name)
+                    )
+                    row['label'] = v
+                    q.append(row)
             q.sort(key=_key)
             q.reverse()
 
@@ -455,7 +457,7 @@ class CollectorAPI(object):
                                   'label': label,
                                   'samples_count': samples,
                                   'value_raw': value or 0,
-                                  'value_num': value if isinstance(value, (int, float, long, Decimal,)) else None})
+                                  'value_num': value if isinstance(value, integer_types + (float, Decimal,)) else None})
             log.debug(MetricValue.add(**metric_values))
 
     def process(self, service, data, valid_from, valid_to, *args, **kwargs):
@@ -949,7 +951,16 @@ class CollectorAPI(object):
                 row[tcol] = t
             return row
 
-        return [postproc(row) for row in raw_sql(q, params)]
+        def check_row(r):
+            is_ok = True
+            # Avoid Count label for countries
+            # (it has been already fixed in "set_metric_values"
+            # but the following line avoid showing the label in case of existing dirty db)
+            if metric_name == "request.country" and r["label"] == "count":
+                is_ok = False
+            return is_ok
+
+        return [postproc(row) for row in raw_sql(q, params) if check_row(row)]
 
     def aggregate_past_periods(self, metric_data_q=None, periods=None, **kwargs):
         """
