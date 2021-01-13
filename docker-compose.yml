@@ -50,6 +50,8 @@ services:
     image: geonode/nginx:3.x
     build: ./scripts/docker/nginx/
     container_name: nginx4${COMPOSE_PROJECT_NAME}
+    env_file:
+      - .env
     environment:
       - HTTPS_HOST=${HTTPS_HOST}
       - HTTP_HOST=${HTTP_HOST}
@@ -66,20 +68,6 @@ services:
       - statics:/mnt/volumes/statics
     restart: on-failure
 
-  # Gets and installs letsencrypt certificates
-  letsencrypt:
-    image: geonode/spcgeonode:letsencrypt-3.1
-    build: ./scripts/spcgeonode/letsencrypt/
-    container_name: letsencrypt4${COMPOSE_PROJECT_NAME}
-    environment:
-      - HTTPS_HOST=${HTTPS_HOST}
-      - HTTP_HOST=${HTTP_HOST}
-      - ADMIN_EMAIL=${ADMIN_EMAIL}
-      - LETSENCRYPT_MODE=${LETSENCRYPT_MODE}
-    volumes:
-      - nginx-certificates:/geonode-certificates
-    restart: on-failure
-
   # Geoserver backend
   geoserver:
     image: geonode/geoserver:2.17.4
@@ -91,7 +79,7 @@ services:
       retries: 1
       start_period: 60s
     env_file:
-      - ./scripts/docker/env/${DOCKER_ENV}/geoserver.env
+      - .env
     volumes:
       - statics:/mnt/volumes/statics
       - geoserver-data-dir:/geoserver_data/data
@@ -112,9 +100,10 @@ services:
   db:
     # use geonode official postgis 11 image
     image: geonode/postgis:latest
+    build: ./docker/postgis-docker/
     container_name: db4${COMPOSE_PROJECT_NAME}
     env_file:
-      - ./scripts/docker/env/${DOCKER_ENV}/db.env
+      - .env
     volumes:
       - dbdata:/var/lib/postgresql/data
       - dbbackups:/pg_backups

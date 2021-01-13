@@ -7,7 +7,7 @@
 
 while true
 do
-        inotifywait -e create -e modify -e delete -e move -r --exclude "\\.certbot\\.lock|\\.well-known" "/geonode-certificates/$LETSENCRYPT_MODE"
+        inotifywait -e create -e modify -e delete -e move -r --exclude "\\.certbot\\.lock|\\.well-known" "/geonode-certificates/"
         echo "Changes noticed in /geonode-certificates"
 
         echo "Waiting 5s for additionnal changes"
@@ -16,9 +16,9 @@ do
         echo "Creating symbolic link for WAN host"
         # for some reason, the ln -f flag doesn't work below...
         rm -f /certificate_symlink
-        if [ -f "/geonode-certificates/$LETSENCRYPT_MODE/live/$HTTPS_HOST/fullchain.pem" ] && [ -f "/geonode-certificates/$LETSENCRYPT_MODE/live/$HTTPS_HOST/privkey.pem" ]; then
+        if [ -f "/geonode-certificates/fullchain.pem" ] && [ -f "/geonode-certificates/privkey.pem" ]; then
                 echo "Certbot certificate exists, we symlink to the live cert"
-                ln -sf "/geonode-certificates/$LETSENCRYPT_MODE/live/$HTTPS_HOST" /certificate_symlink
+                ln -sf "/geonode-certificates/" /certificate_symlink
         else
                 echo "Certbot certificate does not exist, we symlink to autoissued"
                 ln -sf "/geonode-certificates/autoissued" /certificate_symlink
