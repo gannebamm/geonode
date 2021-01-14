@@ -100,7 +100,7 @@ services:
   db:
     # use geonode official postgis 11 image
     image: geonode/postgis:latest
-    build: ./scripts/docker/postgis-docker/
+    # build: ./scripts/docker/postgis-docker/ # is built seperatly
     container_name: db4${COMPOSE_PROJECT_NAME}
     env_file:
       - .env
